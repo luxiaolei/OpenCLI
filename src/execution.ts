@@ -153,7 +153,7 @@ export async function executeCommand(
   let diagnosticEmitted = false;
   try {
     if (shouldUseBrowserSession(cmd)) {
-      const electron = isElectronApp(cmd.site);
+      const electron = isElectronApp(cmd.site) && (!cmd.domain || cmd.domain === 'localhost' || cmd.domain === '127.0.0.1');
       let cdpEndpoint: string | undefined;
 
       if (electron) {
@@ -174,7 +174,7 @@ export async function executeCommand(
       }
 
       ensureRequiredEnv(cmd);
-      const BrowserFactory = getBrowserFactory(cmd.site);
+      const BrowserFactory = electron ? getBrowserFactory(cmd.site) : getBrowserFactory();
       result = await browserSession(BrowserFactory, async (page) => {
         const preNavUrl = resolvePreNav(cmd);
         if (preNavUrl) {
