@@ -306,4 +306,24 @@ describe('executeCommand', () => {
     expect(spy).toHaveBeenCalledWith('chatwise');
     spy.mockRestore();
   });
+
+  it('does not use the Electron launcher for browser web commands on an electron-named site', async () => {
+    const launcher = await import('./launcher.js');
+    const spy = vi.spyOn(launcher, 'resolveElectronEndpoint')
+      .mockResolvedValue('http://127.0.0.1:9236');
+
+    const cmd = cli({
+      site: 'chatgpt',
+      name: 'deep-research-status',
+      description: 'chatgpt web status',
+      browser: true,
+      domain: 'chatgpt.com',
+      strategy: Strategy.COOKIE,
+      func: async () => [{ ok: true }],
+    });
+
+    await expect(executeCommand(cmd, {})).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });

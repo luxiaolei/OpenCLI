@@ -1,6 +1,6 @@
 # ChatGPT
 
-Control the **ChatGPT macOS Desktop App** directly from the terminal. OpenCLI supports two automation approaches for ChatGPT.
+Control the **ChatGPT macOS Desktop App** directly from the terminal. For browser-backed Deep Research commands, see [../browser/chatgpt.md](../browser/chatgpt.md). OpenCLI supports two automation approaches for ChatGPT.
 
 ## Approach 1: AppleScript (Default, No Setup)
 
