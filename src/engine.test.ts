@@ -309,8 +309,15 @@ describe('executeCommand', () => {
 
   it('does not use the Electron launcher for browser web commands on an electron-named site', async () => {
     const launcher = await import('./launcher.js');
+    const runtime = await import('./runtime.js');
     const spy = vi.spyOn(launcher, 'resolveElectronEndpoint')
       .mockResolvedValue('http://127.0.0.1:9236');
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession')
+      .mockImplementation(async (_factory, fn) => fn({
+        goto: async () => undefined,
+        wait: async () => undefined,
+        closeWindow: async () => undefined,
+      } as never));
 
     const cmd = cli({
       site: 'chatgpt',
@@ -322,8 +329,10 @@ describe('executeCommand', () => {
       func: async () => [{ ok: true }],
     });
 
-    await expect(executeCommand(cmd, {})).rejects.toThrow();
+    await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
     expect(spy).not.toHaveBeenCalled();
+    expect(browserSessionSpy).toHaveBeenCalled();
+    browserSessionSpy.mockRestore();
     spy.mockRestore();
   });
 });
