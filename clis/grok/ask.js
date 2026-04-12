@@ -3,7 +3,14 @@ const GROK_URL = 'https://grok.com/';
 const RESPONSE_SELECTOR = 'div.message-bubble, [data-testid="message-bubble"]';
 const BLOCKED_PREFIX = '[BLOCKED]';
 const NO_RESPONSE_PREFIX = '[NO RESPONSE]';
-const SESSION_HINT = 'Likely login/auth/challenge/session issue in the existing grok.com browser session.';
+const EXPLICIT_WEB_SUBMIT_SELECTORS = ['button[aria-label="Submit"]', 'button[aria-label="提交"]', 'button[type="submit"]'];
+const EXPLICIT_WEB_OVERLAY_SELECTORS = [
+    '#onetrust-consent-sdk',
+    '#onetrust-banner-sdk',
+    '[aria-label="Privacy Preference Center"]',
+    '[aria-label="隐私偏好中心"]',
+];
+const SESSION_HINT = 'Check the existing grok.com browser session plus any localization or consent overlay state in the current consumer-web tab.';
 function blocked(message) {
     return [{ response: `${BLOCKED_PREFIX} ${message} ${SESSION_HINT}` }];
 }
@@ -15,6 +22,44 @@ function normalizeBooleanFlag(value) {
         return value;
     const normalized = String(value ?? '').trim().toLowerCase();
     return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+}
+function uniqueNonEmptyStrings(values) {
+    return [...new Set((Array.isArray(values) ? values : []).map((value) => normalizeBubbleText(value)).filter(Boolean))];
+}
+function analyzeExplicitWebSubmitSnapshot(snapshot) {
+    const candidates = Array.isArray(snapshot?.candidates) ? snapshot.candidates : [];
+    const locale = normalizeBubbleText(snapshot?.locale) || 'unknown';
+    const navigatorLanguage = normalizeBubbleText(snapshot?.navigatorLanguage) || 'unknown';
+    const selectors = uniqueNonEmptyStrings(candidates.map((candidate) => candidate?.selector));
+    const labels = uniqueNonEmptyStrings(candidates.map((candidate) => candidate?.ariaLabel));
+    const diagnostics = [`locale=${locale}/${navigatorLanguage}`];
+    if (snapshot?.overlayPresent)
+        diagnostics.push('overlay=present');
+    diagnostics.push(`selectors=${(selectors.length ? selectors : EXPLICIT_WEB_SUBMIT_SELECTORS).join(', ')}`);
+    if (labels.length)
+        diagnostics.push(`labels=${labels.join(', ')}`);
+    if (!candidates.length) {
+        return {
+            reason: 'No Grok submit button matched the explicit web selectors after prompt insertion.',
+            detail: diagnostics.join('; '),
+        };
+    }
+    if (candidates.some((candidate) => candidate?.disabled)) {
+        return {
+            reason: 'Grok submit button was found but remained disabled after prompt insertion.',
+            detail: diagnostics.join('; '),
+        };
+    }
+    if (candidates.some((candidate) => candidate && !candidate.visible)) {
+        return {
+            reason: 'Grok submit button was found but was not visibly clickable after prompt insertion.',
+            detail: diagnostics.join('; '),
+        };
+    }
+    return {
+        reason: 'Grok submit button did not reach a clickable ready state after prompt insertion.',
+        detail: diagnostics.join('; '),
+    };
 }
 function pickLatestAssistantCandidate(bubbles, baselineCount, prompt) {
     const normalizedPrompt = prompt.trim();
@@ -146,9 +191,11 @@ async function tryStartFreshChat(page) {
   })()`);
 }
 async function sendPromptViaExplicitWeb(page, prompt) {
-    return page.evaluate(`(async () => {
+    const result = await page.evaluate(`(async () => {
     const waitFor = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     const composerSelector = '.ProseMirror[contenteditable="true"]';
+    const submitSelectors = ${JSON.stringify(EXPLICIT_WEB_SUBMIT_SELECTORS)};
+    const overlaySelectors = ${JSON.stringify(EXPLICIT_WEB_OVERLAY_SELECTORS)};
     let composer = null;
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -176,15 +223,50 @@ async function sendPromptViaExplicitWeb(page, prompt) {
       };
     }
 
-    const isVisibleEnabledSubmit = (node) => {
+    const isVisible = (node) => {
       if (!(node instanceof HTMLButtonElement)) return false;
       const rect = node.getBoundingClientRect();
       const style = window.getComputedStyle(node);
-      return !node.disabled
-        && rect.width > 0
+      return rect.width > 0
         && rect.height > 0
         && style.visibility !== 'hidden'
         && style.display !== 'none';
+    };
+
+    const collectSubmitState = () => {
+      const seen = new Set();
+      const candidates = [];
+      let readyButton = null;
+
+      for (const selector of submitSelectors) {
+        for (const node of document.querySelectorAll(selector)) {
+          if (!(node instanceof HTMLButtonElement) || seen.has(node)) continue;
+          seen.add(node);
+
+          const visible = isVisible(node);
+          candidates.push({
+            selector,
+            ariaLabel: (node.getAttribute('aria-label') || '').trim(),
+            type: (node.getAttribute('type') || '').trim(),
+            disabled: node.disabled,
+            visible,
+          });
+
+          if (!readyButton && visible && !node.disabled) {
+            readyButton = node;
+          }
+        }
+      }
+
+      return {
+        readyButton,
+        snapshot: {
+          locale: (document.documentElement?.lang || '').trim(),
+          navigatorLanguage: typeof navigator?.language === 'string' ? navigator.language : '',
+          overlayPresent: overlaySelectors.some((selector) => !!document.querySelector(selector)),
+          candidates,
+        },
+      };
     };
 
     try {
@@ -199,29 +281,29 @@ async function sendPromptViaExplicitWeb(page, prompt) {
       };
     }
 
-    let submit = null;
+    let lastSnapshot = null;
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      const candidate = Array.from(document.querySelectorAll('button[aria-label="Submit"]'))
-        .find(isVisibleEnabledSubmit);
+      const { readyButton, snapshot } = collectSubmitState();
+      lastSnapshot = snapshot;
 
-      if (candidate instanceof HTMLButtonElement) {
-        submit = candidate;
-        break;
+      if (readyButton instanceof HTMLButtonElement) {
+        readyButton.click();
+        return { ok: true };
       }
 
       await waitFor(500);
     }
 
-    if (!(submit instanceof HTMLButtonElement)) {
-      return {
-        ok: false,
-        reason: 'Grok submit button did not reach a clickable ready state after prompt insertion.',
-      };
-    }
-
-    submit.click();
-    return { ok: true };
+    return {
+      ok: false,
+      submitDiagnostics: lastSnapshot,
+    };
   })()`);
+    if (!result?.ok && result?.submitDiagnostics) {
+        const analyzed = analyzeExplicitWebSubmitSnapshot(result.submitDiagnostics);
+        return { ...result, reason: analyzed.reason, detail: analyzed.detail };
+    }
+    return result;
 }
 async function runExplicitWebAsk(page, prompt, timeoutMs, newChat) {
     if (newChat) {
@@ -284,6 +366,8 @@ export const askCommand = cli({
     },
 });
 export const __test__ = {
+    EXPLICIT_WEB_SUBMIT_SELECTORS,
+    analyzeExplicitWebSubmitSnapshot,
     pickLatestAssistantCandidate,
     updateStableState,
     normalizeBooleanFlag,
