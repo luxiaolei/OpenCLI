@@ -17,6 +17,20 @@ export const GEMINI_DEEP_RESEARCH_DEFAULT_CONFIRM_LABELS = [
     '\u751f\u6210\u7814\u7a76\u8ba1\u5212',
     '\u751f\u6210\u8c03\u7814\u8ba1\u5212',
 ];
+export const GEMINI_CREATE_IMAGE_DEFAULT_LABELS = [
+    'Create image',
+    'Create Image',
+    '\u521b\u5efa\u56fe\u7247',
+    '\u521b\u5efa\u56fe\u50cf',
+    '\u751f\u6210\u56fe\u7247',
+    '\u751f\u6210\u56fe\u50cf',
+];
+export const GEMINI_UPLOAD_MENU_DEFAULT_LABELS = [
+    'Open upload file menu',
+    'Open upload menu',
+    '\u6253\u5f00\u4e0a\u4f20\u6587\u4ef6\u83dc\u5355',
+    '\u6253\u5f00\u4e0a\u4f20\u83dc\u5355',
+];
 const GEMINI_RESPONSE_NOISE_PATTERNS = [
     /Gemini can make mistakes\.?/gi,
     /Google Terms/gi,
@@ -81,6 +95,81 @@ export function resolveGeminiLabels(value, fallback) {
 export function parseGeminiPositiveInt(value, fallback) {
     const parsed = Number.parseInt(String(value ?? ''), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+function normalizeGeminiCapabilityLabels(value, max = 24) {
+    if (!Array.isArray(value))
+        return [];
+    const seen = new Set();
+    const labels = [];
+    for (const item of value) {
+        const label = String(item ?? '').replace(/\s+/g, ' ').trim();
+        if (!label)
+            continue;
+        const key = label.toLowerCase();
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        labels.push(label);
+        if (labels.length >= max)
+            break;
+    }
+    return labels;
+}
+export function normalizeGeminiImageCapabilities(raw, pageState = {}) {
+    const createImageEntryLabels = normalizeGeminiCapabilityLabels(raw?.createImageEntryLabels);
+    const createImageModeLabels = normalizeGeminiCapabilityLabels(raw?.createImageModeLabels);
+    const templateCards = normalizeGeminiCapabilityLabels(raw?.templateCards, 40);
+    const uploadTriggerLabels = normalizeGeminiCapabilityLabels(raw?.uploadTriggerLabels);
+    const uploadAffordances = normalizeGeminiCapabilityLabels(raw?.uploadAffordances);
+    const toolButtons = normalizeGeminiCapabilityLabels(raw?.toolButtons);
+    const modeButtons = normalizeGeminiCapabilityLabels(raw?.modeButtons);
+    const pageUrl = String(raw?.pageUrl ?? pageState?.url ?? GEMINI_APP_URL).trim() || GEMINI_APP_URL;
+    const pageTitle = String(raw?.pageTitle ?? pageState?.title ?? '').trim();
+    const activationPath = String(raw?.activationPath ?? '').trim();
+    const blockedReason = String(raw?.blockedReason ?? '').trim();
+    const createImageEntryVisible = !!(raw?.createImageEntryVisible || createImageEntryLabels.length > 0);
+    const createImageModeActive = !!(raw?.createImageModeActive || createImageModeLabels.length > 0 || templateCards.length > 0);
+    const imageSpecificUploadContext = createImageModeActive || templateCards.length > 0;
+    const scopedUploadTriggerLabels = imageSpecificUploadContext ? uploadTriggerLabels : [];
+    const scopedUploadAffordances = imageSpecificUploadContext ? uploadAffordances : [];
+    const uploadTriggerVisible = !!(imageSpecificUploadContext && (raw?.uploadTriggerVisible || scopedUploadTriggerLabels.length > 0));
+    const uploadMenuVisible = !!(imageSpecificUploadContext && ((raw?.uploadMenuVisible && scopedUploadAffordances.length > 0) || scopedUploadAffordances.length > 0));
+    const verifiedSignals = [
+        createImageEntryVisible,
+        createImageModeActive,
+        templateCards.length > 0,
+    ].filter(Boolean).length;
+    let status = 'absent';
+    let reason = '';
+    if (pageState?.isSignedIn === false || blockedReason === 'not-signed-in') {
+        status = 'blocked';
+        reason = 'not-signed-in';
+    }
+    else if (blockedReason) {
+        status = 'blocked';
+        reason = blockedReason;
+    }
+    else if (verifiedSignals > 0) {
+        status = 'verified';
+    }
+    return {
+        status,
+        reason,
+        page_url: pageUrl,
+        page_title: pageTitle,
+        activation_path: activationPath,
+        create_image_entry_visible: createImageEntryVisible,
+        create_image_entry_labels: createImageEntryLabels,
+        create_image_mode_active: createImageModeActive,
+        create_image_mode_labels: createImageModeLabels,
+        template_cards: templateCards,
+        upload_trigger_visible: uploadTriggerVisible,
+        upload_trigger_labels: scopedUploadTriggerLabels,
+        upload_menu_visible: uploadMenuVisible,
+        upload_affordances: scopedUploadAffordances,
+        tool_buttons: toolButtons,
+        mode_buttons: modeButtons,
+    };
 }
 export function parseGeminiTitleMatchMode(value, fallback = 'contains') {
     const raw = String(value ?? fallback).trim().toLowerCase();
@@ -993,6 +1082,192 @@ function clickGeminiConversationByTitleScript(query) {
 function currentUrlScript() {
     return 'window.location.href';
 }
+function clickGeminiLabeledControlScript(labels) {
+    const labelsJson = JSON.stringify(labels);
+    return `
+    ((targetLabels) => {
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const lower = (value) => normalize(value).toLowerCase();
+      const normalized = Array.isArray(targetLabels)
+        ? targetLabels.map((label) => normalize(label)).filter((label) => label)
+        : [];
+      const lowered = normalized.map((label) => label.toLowerCase());
+      if (lowered.length === 0) return '';
+
+      const isDisabled = (el) => {
+        if (!(el instanceof HTMLElement)) return true;
+        if ('disabled' in el && el.disabled) return true;
+        if (el.hasAttribute('disabled')) return true;
+        return (el.getAttribute('aria-disabled') || '').toLowerCase() === 'true';
+      };
+      const isVisible = (el) => {
+        if (!(el instanceof HTMLElement)) return false;
+        if (el.hidden || el.closest('[hidden]')) return false;
+        const ariaHidden = (el.getAttribute('aria-hidden') || '').toLowerCase();
+        if (ariaHidden === 'true' || el.closest('[aria-hidden="true"]')) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        if (Number(style.opacity) === 0 || style.pointerEvents === 'none') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const labelOf = (node) => [
+        node?.getAttribute?.('aria-label') || '',
+        node?.getAttribute?.('title') || '',
+        node?.textContent || '',
+      ].map((value) => normalize(value)).filter(Boolean).join(' ');
+
+      const candidates = Array.from(document.querySelectorAll('button, [role="button"], a, [tabindex]'));
+      let bestNode = null;
+      let bestLabel = '';
+      let bestScore = -1;
+
+      for (const node of candidates) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (!isVisible(node) || isDisabled(node)) continue;
+        const label = labelOf(node);
+        if (!label) continue;
+        const labelLower = lower(label);
+        for (let index = 0; index < lowered.length; index += 1) {
+          const target = lowered[index];
+          if (!target || !labelLower.includes(target)) continue;
+          const rect = node.getBoundingClientRect();
+          let score = 1;
+          if (labelLower === target) score += 20;
+          if (lower(node.getAttribute('aria-label') || '') === target) score += 10;
+          if (node.getAttribute('aria-haspopup')) score += 2;
+          score += Math.min(6, Math.round((rect.width + rect.height) / 120));
+          if (score > bestScore) {
+            bestNode = node;
+            bestLabel = normalize(label) || normalized[index];
+            bestScore = score;
+          }
+        }
+      }
+
+      if (!(bestNode instanceof HTMLElement)) return '';
+      try { bestNode.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { bestNode.focus({ preventScroll: true }); } catch {}
+      bestNode.click();
+      return bestLabel;
+    })(${labelsJson})
+  `;
+}
+function inspectGeminiImageCapabilitiesScript() {
+    return `
+    (() => {
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const lower = (value) => normalize(value).toLowerCase();
+      const uniq = (values, max = 40) => {
+        const seen = new Set();
+        const items = [];
+        for (const value of values) {
+          const label = normalize(value);
+          if (!label) continue;
+          const key = label.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          items.push(label);
+          if (items.length >= max) break;
+        }
+        return items;
+      };
+      const includesAny = (value, needles) => {
+        const hay = lower(value);
+        if (!hay) return false;
+        return needles.some((needle) => hay.includes(needle));
+      };
+      const isVisible = (el) => {
+        if (!(el instanceof HTMLElement)) return false;
+        if (el.hidden || el.closest('[hidden]')) return false;
+        const ariaHidden = (el.getAttribute('aria-hidden') || '').toLowerCase();
+        if (ariaHidden === 'true' || el.closest('[aria-hidden="true"]')) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        if (Number(style.opacity) === 0 || style.pointerEvents === 'none') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const labelOf = (node) => uniq([
+        node?.getAttribute?.('aria-label') || '',
+        node?.getAttribute?.('title') || '',
+        node?.textContent || '',
+      ], 3).join(' ');
+      const interactiveNodes = Array.from(document.querySelectorAll('button, [role="button"], a, [role="menuitem"], [role="option"], summary, [tabindex]'))
+        .filter((node) => node instanceof HTMLElement && isVisible(node));
+      const interactiveLabels = uniq(interactiveNodes.map((node) => labelOf(node)).filter(Boolean), 120);
+      const createImageKeywords = ['create image', 'create an image', '创建图片', '创建图像', '生成图片', '生成图像'];
+      const styleHeadingKeywords = ['pick a style for your image', 'style for your image', 'choose a style for your image', '选择图片风格', '选择图像风格'];
+      const uploadTriggerKeywords = ['open upload file menu', 'open upload menu', '打开上传文件菜单', '打开上传菜单'];
+      const uploadAffordanceKeywords = ['upload files', 'add from drive', 'photos', 'import code', '上传文件', '添加自云端硬盘', '云端硬盘', '照片', '导入代码'];
+      const toolKeywords = ['tools', '工具', 'deselect create image', '取消 create image', '取消创建图片', '取消创建图像'];
+      const modeKeywords = ['open mode picker', 'mode picker', '模式选择器', '打开模式选择器'];
+      const styleHeadingNodes = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, div, span, p'))
+        .filter((node) => node instanceof HTMLElement && isVisible(node))
+        .filter((node) => includesAny(labelOf(node), styleHeadingKeywords));
+      const styleHeadingNode = styleHeadingNodes[0] || null;
+      const styleHeading = styleHeadingNode ? normalize(labelOf(styleHeadingNode)) : '';
+      const createImageEntryLabels = uniq(interactiveLabels.filter((label) => includesAny(label, createImageKeywords)), 12);
+      const createImageModeLabels = uniq([
+        ...interactiveLabels.filter((label) => includesAny(label, ['deselect create image', '取消 create image', '取消创建图片', '取消创建图像'])),
+        styleHeading,
+      ], 12);
+      const createImageModeActive = createImageModeLabels.length > 0;
+      const uploadTriggerLabels = uniq(interactiveLabels.filter((label) => includesAny(label, uploadTriggerKeywords)), 12);
+      const menuRoots = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"], [aria-modal="true"]'))
+        .filter((node) => node instanceof HTMLElement && isVisible(node))
+        .filter((node) => includesAny(labelOf(node), uploadAffordanceKeywords));
+      const uploadAffordances = uniq(menuRoots.flatMap((root) => Array.from(root.querySelectorAll('button, [role="menuitem"], [role="option"], a, li'))
+        .filter((node) => node instanceof HTMLElement && isVisible(node))
+        .map((node) => labelOf(node))
+        .filter((label) => includesAny(label, uploadAffordanceKeywords))), 20);
+      const templateCards = (() => {
+        if (!styleHeadingNode)
+          return [];
+        const headingRect = styleHeadingNode.getBoundingClientRect();
+        const candidates = [];
+        const templateExcludes = [
+          ...createImageKeywords,
+          ...uploadTriggerKeywords,
+          ...uploadAffordanceKeywords,
+          ...toolKeywords,
+          ...modeKeywords,
+          'send',
+          'stop generating',
+        ];
+        for (const node of interactiveNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (styleHeadingNode === node) continue;
+          const label = labelOf(node);
+          if (!label || label === styleHeading) continue;
+          if (label.length > 48) continue;
+          if (includesAny(label, templateExcludes)) continue;
+          const rect = node.getBoundingClientRect();
+          if (rect.top < headingRect.top - 40) continue;
+          if (rect.top > headingRect.bottom + 1200) continue;
+          if (rect.width < 24 || rect.height < 20) continue;
+          candidates.push(label);
+        }
+        return uniq(candidates, 40);
+      })();
+      return {
+        pageUrl: window.location.href,
+        pageTitle: document.title || '',
+        createImageEntryVisible: createImageEntryLabels.length > 0,
+        createImageEntryLabels,
+        createImageModeActive,
+        createImageModeLabels,
+        templateCards,
+        uploadTriggerVisible: uploadTriggerLabels.length > 0,
+        uploadTriggerLabels,
+        uploadMenuVisible: uploadAffordances.length > 0,
+        uploadAffordances,
+        toolButtons: uniq(interactiveLabels.filter((label) => includesAny(label, toolKeywords)), 20),
+        modeButtons: uniq(interactiveLabels.filter((label) => includesAny(label, modeKeywords)), 20),
+      };
+    })()
+  `;
+}
 export async function isOnGemini(page) {
     const url = await page.evaluate(currentUrlScript()).catch(() => '');
     if (typeof url !== 'string' || !url)
@@ -1017,6 +1292,64 @@ export async function getCurrentGeminiUrl(page) {
     if (typeof url === 'string' && url.trim())
         return url;
     return GEMINI_APP_URL;
+}
+export async function clickGeminiCreateImageEntry(page, labels = GEMINI_CREATE_IMAGE_DEFAULT_LABELS) {
+    await ensureGeminiPage(page);
+    const matched = await page.evaluate(clickGeminiLabeledControlScript(labels));
+    if (typeof matched === 'string' && matched) {
+        await page.wait(0.5);
+        return matched;
+    }
+    return '';
+}
+export async function openGeminiUploadMenu(page, labels = GEMINI_UPLOAD_MENU_DEFAULT_LABELS) {
+    await ensureGeminiPage(page);
+    const matched = await page.evaluate(clickGeminiLabeledControlScript(labels));
+    if (typeof matched === 'string' && matched) {
+        await page.wait(0.5);
+        return matched;
+    }
+    return '';
+}
+export async function inspectGeminiImageCapabilities(page) {
+    await ensureGeminiPage(page);
+    const pageState = await getGeminiPageState(page).catch(() => ({}));
+    if (pageState?.isSignedIn === false) {
+        return normalizeGeminiImageCapabilities({
+            pageUrl: pageState?.url,
+            pageTitle: pageState?.title,
+            blockedReason: 'not-signed-in',
+        }, pageState);
+    }
+    let raw = await page.evaluate(inspectGeminiImageCapabilitiesScript()).catch(() => ({}));
+    let activationPath = raw?.createImageModeActive ? 'current-view' : '';
+    if (!raw?.createImageModeActive) {
+        const clickedEntry = await clickGeminiCreateImageEntry(page);
+        if (clickedEntry) {
+            raw = await page.evaluate(inspectGeminiImageCapabilitiesScript()).catch(() => raw);
+            activationPath = raw?.createImageModeActive ? 'entry-click' : 'entry-click-no-mode';
+        }
+    }
+    if (!raw?.createImageModeActive && !activationPath) {
+        const matchedTool = await selectGeminiTool(page, GEMINI_CREATE_IMAGE_DEFAULT_LABELS).catch(() => '');
+        if (matchedTool) {
+            await page.wait(0.5);
+            raw = await page.evaluate(inspectGeminiImageCapabilitiesScript()).catch(() => raw);
+            activationPath = raw?.createImageModeActive ? 'tools-menu' : 'tools-menu-no-mode';
+        }
+    }
+    if (!raw?.uploadMenuVisible && (raw?.createImageModeActive || raw?.templateCards?.length > 0)) {
+        const uploadMatched = await openGeminiUploadMenu(page).catch(() => '');
+        if (uploadMatched) {
+            raw = await page.evaluate(inspectGeminiImageCapabilitiesScript()).catch(() => raw);
+            if (!activationPath)
+                activationPath = 'upload-menu';
+        }
+    }
+    return normalizeGeminiImageCapabilities({
+        ...raw,
+        activationPath,
+    }, pageState);
 }
 export async function openGeminiToolsMenu(page) {
     await ensureGeminiPage(page);

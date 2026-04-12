@@ -55,8 +55,8 @@ export const imageCommand = cli({
     timeoutSeconds: 240,
     args: [
         { name: 'prompt', positional: true, required: true, help: 'Image prompt to send to Gemini' },
-        { name: 'rt', default: '1:1', help: 'Ratio shorthand for aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3)' },
-        { name: 'st', default: '', help: 'Style shorthand, e.g. anime, icon, watercolor' },
+        { name: 'rt', default: '1:1', help: 'Prompt-level ratio shorthand (not a native Gemini UI control): 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3' },
+        { name: 'st', default: '', help: 'Prompt-level style shorthand, e.g. anime, icon, watercolor (not a native Gemini template selector)' },
         { name: 'op', default: path.join(os.homedir(), 'tmp', 'gemini-images'), help: 'Output directory shorthand' },
         { name: 'sd', type: 'boolean', default: false, help: 'Skip download shorthand; only show Gemini page link' },
     ],

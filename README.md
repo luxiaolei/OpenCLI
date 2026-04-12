@@ -204,7 +204,7 @@ To load the source Browser Bridge extension:
 | **amazon** | `bestsellers` `search` `product` `offer` `discussion` `movers-shakers` `new-releases` |
 | **1688** | `search` `item` `assets` `download` `store` |
 | **gitee** | `trending` `search` `user` |
-| **gemini** | `new` `ask` `image` `deep-research` `deep-research-result` |
+| **gemini** | `new` `ask` `image-capabilities` `image` `deep-research` `deep-research-result` |
 | **chatgpt** | `status` `new` `send` `read` `ask` `model` `deep-research` `deep-research-status` `image-capabilities` |
 | **yuanbao** | `new` `ask` |
 | **notebooklm** | `status` `list` `open` `current` `get` `history` `summary` `note-list` `notes-get` `source-list` `source-get` `source-fulltext` `source-guide` |
@@ -214,6 +214,8 @@ To load the source Browser Bridge extension:
 | **quark** | `ls` `mkdir` `mv` `rename` `rm` `save` `share-tree` |
 
 87+ adapters in total — **[→ see all supported sites & commands](./docs/adapters/index.md)**
+
+Gemini note: `opencli gemini image-capabilities` is the capability-first inspector for visible `Create image` UI. Current `opencli gemini image --rt/--st` flags are prompt-level augmentation, not verified native Gemini ratio/style controls.
 
 ## CLI Hub
 

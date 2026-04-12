@@ -5708,14 +5708,14 @@
         "type": "str",
         "default": "1:1",
         "required": false,
-        "help": "Ratio shorthand for aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3)"
+        "help": "Prompt-level ratio shorthand (not a native Gemini UI control): 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3"
       },
       {
         "name": "st",
         "type": "str",
         "default": "",
         "required": false,
-        "help": "Style shorthand, e.g. anime, icon, watercolor"
+        "help": "Prompt-level style shorthand, e.g. anime, icon, watercolor (not a native Gemini template selector)"
       },
       {
         "name": "op",
@@ -5741,6 +5741,31 @@
     "type": "js",
     "modulePath": "gemini/image.js",
     "sourceFile": "gemini/image.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gemini",
+    "name": "image-capabilities",
+    "description": "Inspect visible Gemini Create image capabilities without generating images",
+    "domain": "gemini.google.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "status",
+      "page_title",
+      "create_image_entry_visible",
+      "create_image_mode_active",
+      "template_cards",
+      "upload_affordances",
+      "tool_buttons",
+      "mode_buttons",
+      "page_url"
+    ],
+    "timeout": 90,
+    "type": "js",
+    "modulePath": "gemini/image-capabilities.js",
+    "sourceFile": "gemini/image-capabilities.js",
     "navigateBefore": false
   },
   {

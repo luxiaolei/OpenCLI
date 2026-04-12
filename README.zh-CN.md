@@ -244,7 +244,7 @@ npm link
 | **amazon** | `bestsellers` `search` `product` `offer` `discussion` `movers-shakers` `new-releases` | 浏览器 |
 | **1688** | `search` `item` `assets` `download` `store` | 浏览器 |
 | **gitee** | `trending` `search` `user` | 公开 / 浏览器 |
-| **gemini** | `new` `ask` `image` `deep-research` `deep-research-result` | 浏览器 |
+| **gemini** | `new` `ask` `image-capabilities` `image` `deep-research` `deep-research-result` | 浏览器 |
 | **spotify** | `auth` `status` `play` `pause` `next` `prev` `volume` `search` `queue` `shuffle` `repeat` | OAuth API |
 | **notebooklm** | `status` `list` `open` `current` `get` `history` `summary` `note-list` `notes-get` `source-list` `source-get` `source-fulltext` `source-guide` | 浏览器 |
 | **36kr** | `news` `hot` `search` `article` | 公开 / 浏览器 |
@@ -263,6 +263,8 @@ npm link
 | **yuanbao** | `new` `ask` | 浏览器 |
 
 87+ 适配器 — **[→ 查看完整命令列表](./docs/adapters/index.md)**
+
+Gemini 说明：`opencli gemini image-capabilities` 用于只读检查当前可见的 `Create image` 能力面；现有 `opencli gemini image --rt/--st` 仍是 prompt 级增强，不代表已点击 Gemini 原生比例 / 风格控件。
 
 ### 外部 CLI 枢纽
 
