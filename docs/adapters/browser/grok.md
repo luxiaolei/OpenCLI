@@ -50,4 +50,8 @@ opencli grok ask --prompt "Write a long essay" --web --timeout 180
 
 - `--web` drives the Grok consumer web UI in the browser, not an API.
 - It depends on an already-authenticated session and can fail if Grok shows login, challenge, rate-limit, or other session-gating UI.
+- The explicit consumer-web path now probes several submit selectors (`button[aria-label="Submit"]`, `button[aria-label="提交"]`, and `button[type="submit"]`), but Grok localization or DOM changes can still break readiness detection.
+- Consumer-web locales matter: a browser tab that renders Grok in non-English UI may expose different labels or consent text than the default compatibility path.
+- Consent/overlay UI such as OneTrust can leave the composer present while still blocking or obscuring the submit path; clear overlays before retrying `--web`.
+- If `--web` blocks, the adapter now surfaces locale + overlay-aware diagnostics, but plain `opencli grok ask` may still be the more tolerant fallback when the consumer web shell drifts.
 - It may break when the Grok composer DOM, submit button behavior, or message bubble structure changes.

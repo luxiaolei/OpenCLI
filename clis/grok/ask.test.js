@@ -29,6 +29,59 @@ describe('grok ask helpers', () => {
         expect(__test__.normalizeBooleanFlag('false')).toBe(false);
         expect(__test__.normalizeBooleanFlag(undefined)).toBe(false);
     });
+    it('supports localized explicit web submit selectors in priority order', () => {
+        expect(__test__.EXPLICIT_WEB_SUBMIT_SELECTORS).toEqual([
+            'button[aria-label="Submit"]',
+            'button[aria-label="提交"]',
+            'button[type="submit"]',
+        ]);
+    });
+    it('reports selector mismatch diagnostics with locale and overlay details', () => {
+        const result = __test__.analyzeExplicitWebSubmitSnapshot({
+            locale: 'zh',
+            navigatorLanguage: 'zh-CN',
+            overlayPresent: true,
+            candidates: [],
+        });
+        expect(result.reason).toMatch(/No Grok submit button matched/);
+        expect(result.detail).toContain('locale=zh/zh-CN');
+        expect(result.detail).toContain('overlay=present');
+        expect(result.detail).toContain('button[aria-label="提交"]');
+        expect(result.detail).toContain('button[type="submit"]');
+    });
+    it('reports disabled submit buttons separately from missing selectors', () => {
+        const result = __test__.analyzeExplicitWebSubmitSnapshot({
+            locale: 'zh',
+            navigatorLanguage: 'zh-CN',
+            candidates: [{
+                    selector: 'button[aria-label="提交"]',
+                    ariaLabel: '提交',
+                    type: 'submit',
+                    disabled: true,
+                    visible: true,
+                }],
+        });
+        expect(result.reason).toMatch(/remained disabled/);
+        expect(result.detail).toContain('locale=zh/zh-CN');
+        expect(result.detail).toContain('labels=提交');
+        expect(result.detail).toContain('selectors=button[aria-label="提交"]');
+    });
+    it('reports non-visible submit buttons as a separate blocked state', () => {
+        const result = __test__.analyzeExplicitWebSubmitSnapshot({
+            locale: 'en',
+            navigatorLanguage: 'en-US',
+            candidates: [{
+                    selector: 'button[type="submit"]',
+                    ariaLabel: 'Submit',
+                    type: 'submit',
+                    disabled: false,
+                    visible: false,
+                }],
+        });
+        expect(result.reason).toMatch(/not visibly clickable/);
+        expect(result.detail).toContain('locale=en/en-US');
+        expect(result.detail).toContain('labels=Submit');
+    });
     it('ignores baseline bubbles and the echoed prompt when choosing the latest assistant candidate', () => {
         const candidate = __test__.pickLatestAssistantCandidate(['older assistant answer', 'Prompt text', 'Assistant draft', 'Assistant final'], 1, 'Prompt text');
         expect(candidate).toBe('Assistant final');
