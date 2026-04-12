@@ -485,35 +485,6 @@ export async function getChatGPTConversationList(page) {
 
 export const CHATGPT_IMAGES_URL = 'https://chatgpt.com/images';
 
-const CHATGPT_IMAGE_PROMPT_SELECTORS = [
-  'textarea[placeholder*="描述新图片"]',
-  'textarea[aria-label*="描述新图片"]',
-  'textarea[placeholder*="Describe"]',
-  'textarea[aria-label*="Describe"]',
-  'textarea[data-testid="prompt-textarea"]',
-  'textarea',
-];
-
-const CHATGPT_IMAGE_STYLE_SECTION_LABELS = ['在图像上试用风格效果', 'Try styles on images'];
-const CHATGPT_IMAGE_TASK_SECTION_LABELS = ['发现新事物', 'Discover something new'];
-const CHATGPT_IMAGE_RESULT_ACTION_LABELS = [
-  '打开图片',
-  'Open image',
-  '编辑图片',
-  'Edit image',
-  '分享此图片',
-  'Share this image',
-  '下载图片',
-  'Download image',
-  '重新生成',
-  'Regenerate',
-  '变体',
-  'Variant',
-  'Variation',
-  '放大',
-  'Upscale',
-];
-
 function buildImageCapabilitiesScript() {
   return `(() => {
     const clean = (value) => String(value ?? '')
@@ -532,28 +503,31 @@ function buildImageCapabilitiesScript() {
     const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
     const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
     const lower = (value) => clean(value).toLowerCase();
+    const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
 
-    const accountButton = document.querySelector('[data-testid="accounts-profile-button"]');
-    const promptInput = document.querySelector('textarea[name="prompt-textarea"]')
-      || document.querySelector('textarea[placeholder]')
-      || document.querySelector('textarea');
-    const addButton = document.querySelector('#composer-plus-btn')
-      || Array.from(document.querySelectorAll('button')).find((node) => {
+    const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
+    const accountButton = queryVisible(document, '[data-testid="accounts-profile-button"]');
+    const promptInput = Array.from(mainRoot.querySelectorAll('textarea')).find((node) => isVisible(node)) || null;
+    const addButton = queryVisible(mainRoot, '#composer-plus-btn')
+      || Array.from(mainRoot.querySelectorAll('button')).find((node) => {
+        if (!isVisible(node)) return false;
         const label = lower(attrOf(node, 'aria-label') || textOf(node));
         return label.includes('添加文件等') || label.includes('add file');
-      });
-    const voiceButton = Array.from(document.querySelectorAll('button')).find((node) => {
+      }) || null;
+    const voiceButton = Array.from(mainRoot.querySelectorAll('button')).find((node) => {
+      if (!isVisible(node)) return false;
       const label = lower(attrOf(node, 'aria-label') || textOf(node));
       return label.includes('开始听写') || label.includes('启动语音功能') || label.includes('start dictation') || label.includes('voice');
     }) || null;
-    const sendButton = document.querySelector('#composer-submit-button')
-      || Array.from(document.querySelectorAll('button')).find((node) => {
+    const sendButton = queryVisible(mainRoot, '#composer-submit-button')
+      || Array.from(mainRoot.querySelectorAll('button')).find((node) => {
+        if (!isVisible(node)) return false;
         const label = lower(attrOf(node, 'aria-label') || textOf(node));
         return label.includes('发送提示') || label.includes('send prompt');
-      });
+      }) || null;
 
-    const findSectionByHeading = (heading) => Array.from(document.querySelectorAll('section')).find((section) => isVisible(section) && textOf(section).includes(heading)) || null;
-    const collectSectionButtons = (section) => uniq(Array.from(section ? section.querySelectorAll('button') : []).map((button) => {
+    const findSectionByHeading = (heading) => Array.from(mainRoot.querySelectorAll('section')).find((section) => isVisible(section) && textOf(section).includes(heading)) || null;
+    const collectSectionButtons = (section) => uniq(Array.from(section ? section.querySelectorAll('button') : []).filter((button) => isVisible(button)).map((button) => {
       const label = attrOf(button, 'title') || attrOf(button, 'aria-label') || textOf(button);
       return clean(label).replace(/[›>].*$/, '');
     }).filter((label) => {
@@ -563,16 +537,17 @@ function buildImageCapabilitiesScript() {
 
     const styleSection = findSectionByHeading('在图像上试用风格效果') || findSectionByHeading('Try styles on images');
     const taskSection = findSectionByHeading('发现新事物') || findSectionByHeading('Discover something new');
-    const resultActions = uniq(Array.from(document.querySelectorAll('[data-testid="image-gen-overlay-left-actions"] button, [data-testid="image-gen-overlay-right-actions"] button, button[aria-label]')).map((button) => attrOf(button, 'aria-label') || textOf(button)).filter((label) => {
+    const resultActions = uniq(Array.from(document.querySelectorAll('[data-testid="image-gen-overlay-left-actions"] button, [data-testid="image-gen-overlay-right-actions"] button')).filter((button) => isVisible(button)).map((button) => attrOf(button, 'aria-label') || textOf(button)).filter((label) => {
       const normalized = lower(label);
-      return normalized.includes('打开图片') || normalized.includes('open image') || normalized.includes('编辑图片') || normalized.includes('edit image') || normalized.includes('分享此图片') || normalized.includes('share this image') || normalized.includes('下载此图片') || normalized.includes('download image');
+      return normalized.includes('打开图片') || normalized.includes('open image') || normalized.includes('编辑图片') || normalized.includes('edit image') || normalized.includes('分享此图片') || normalized.includes('share this image');
     }));
-    const uploadInputs = uniq(Array.from(document.querySelectorAll('input[type="file"]')).map((node) => {
+    const uploadInputs = uniq(Array.from(mainRoot.querySelectorAll('input[type="file"]')).map((node) => {
       const id = attrOf(node, 'id');
       const accept = attrOf(node, 'accept');
       return id || accept ? [id || 'file-input', accept ? '(' + accept + ')' : ''].filter(Boolean).join(' ') : '';
     }));
-    const dragDropNode = Array.from(document.querySelectorAll('h3, div, span')).find((node) => {
+    const dragDropNode = Array.from(mainRoot.querySelectorAll('h3, div, span')).find((node) => {
+      if (!isVisible(node)) return false;
       const value = lower(textOf(node));
       return value.includes('拖放图片以上传') || (value.includes('drag') && value.includes('upload'));
     }) || null;
@@ -630,6 +605,27 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
   push('page', 'url', normalized.url);
   push('page', 'title', normalized.title);
   push('debug', 'detail', normalized.detail);
+
+  if (!normalized.isImagesPage) {
+    push('state', 'status', 'absent');
+    push('state', 'reason', 'not-images-page');
+    return rows;
+  }
+
+  const imageContextVisible = Boolean(
+    normalized.styleCards.length > 0
+    || normalized.taskCards.length > 0
+    || normalized.resultActions.length > 0
+    || normalized.dragDropText
+    || normalized.uploadInputs.length > 0
+  );
+
+  if (!imageContextVisible) {
+    push('state', 'status', 'absent');
+    push('state', 'reason', 'no-image-context');
+    return rows;
+  }
+
   push('account', 'tier', normalized.accountTier);
   push('composer', 'prompt_placeholder', normalized.promptPlaceholder);
   push('composer', 'add_button', normalized.addButtonLabel);

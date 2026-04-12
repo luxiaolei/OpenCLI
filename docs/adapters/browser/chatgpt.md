@@ -52,6 +52,17 @@ opencli chatgpt image-capabilities
 
 No options yet. The command only inspects what is visibly available on `/images` in the current logged-in browser session.
 
+#### `image-capabilities` out of scope
+
+This command does **not** currently promise or infer:
+- `model`
+- `quality`
+- `aspect-ratio`
+- `size`
+- `seed`
+- `variant`
+- `download`
+
 ## Behavior
 
 - These commands drive the **ChatGPT web UI**, not the macOS desktop app.
@@ -85,6 +96,7 @@ These browser commands do **not** currently promise:
 - Chrome is running
 - You are already logged into `chatgpt.com`
 - Your account can open `/deep-research`
+- Your account can open `/images`
 - [Browser Bridge extension](/guide/browser-bridge) is installed
 
 ## Caveats
