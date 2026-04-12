@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test__, collectGeminiTranscriptAdditions, pickGeminiDeepResearchExportUrl, sanitizeGeminiResponseText, sendGeminiMessage, } from './utils.js';
+import { __test__, collectGeminiTranscriptAdditions, normalizeGeminiImageCapabilities, pickGeminiDeepResearchExportUrl, sanitizeGeminiResponseText, sendGeminiMessage, } from './utils.js';
 function createPageMock() {
     return {
         goto: vi.fn().mockResolvedValue(undefined),
@@ -176,7 +176,143 @@ describe('gemini turn normalization', () => {
         ]);
     });
 });
-describe('pickGeminiDeepResearchExportUrl', () => {
+describe('normalizeGeminiImageCapabilities', () => {
+    it('classifies visible create-image affordances as verified and deduplicates labels', () => {
+        expect(normalizeGeminiImageCapabilities({
+            pageUrl: 'https://gemini.google.com/app/abc',
+            pageTitle: 'Gemini',
+            createImageEntryLabels: ['Create image', 'Create image', '  Create image  '],
+            createImageModeLabels: ['Pick a style for your image'],
+            templateCards: ['Monochrome', 'Technicolor', 'Monochrome'],
+            uploadTriggerLabels: ['Open upload file menu'],
+            uploadAffordances: ['Upload files', 'Add from Drive', 'Upload files'],
+            toolButtons: ['Tools', 'Deselect Create image'],
+            modeButtons: ['Open mode picker'],
+            activationPath: 'entry-click',
+        })).toEqual({
+            status: 'verified',
+            reason: '',
+            page_url: 'https://gemini.google.com/app/abc',
+            page_title: 'Gemini',
+            activation_path: 'entry-click',
+            create_image_entry_visible: true,
+            create_image_entry_labels: ['Create image'],
+            create_image_mode_active: true,
+            create_image_mode_labels: ['Pick a style for your image'],
+            template_cards: ['Monochrome', 'Technicolor'],
+            upload_trigger_visible: true,
+            upload_trigger_labels: ['Open upload file menu'],
+            upload_menu_visible: true,
+            upload_affordances: ['Upload files', 'Add from Drive'],
+            tool_buttons: ['Tools', 'Deselect Create image'],
+            mode_buttons: ['Open mode picker'],
+        });
+    });
+    it('returns blocked when Gemini is signed out', () => {
+        expect(normalizeGeminiImageCapabilities({}, {
+            isSignedIn: false,
+            url: 'https://gemini.google.com/app',
+            title: 'Sign in - Gemini',
+        })).toEqual({
+            status: 'blocked',
+            reason: 'not-signed-in',
+            page_url: 'https://gemini.google.com/app',
+            page_title: 'Sign in - Gemini',
+            activation_path: '',
+            create_image_entry_visible: false,
+            create_image_entry_labels: [],
+            create_image_mode_active: false,
+            create_image_mode_labels: [],
+            template_cards: [],
+            upload_trigger_visible: false,
+            upload_trigger_labels: [],
+            upload_menu_visible: false,
+            upload_affordances: [],
+            tool_buttons: [],
+            mode_buttons: [],
+        });
+    });
+    it('does not verify generic tools or mode buttons without create-image evidence', () => {
+        expect(normalizeGeminiImageCapabilities({
+            pageUrl: 'https://gemini.google.com/app/abc',
+            pageTitle: 'Gemini',
+            toolButtons: ['Tools'],
+            modeButtons: ['Open mode picker'],
+        })).toEqual({
+            status: 'absent',
+            reason: '',
+            page_url: 'https://gemini.google.com/app/abc',
+            page_title: 'Gemini',
+            activation_path: '',
+            create_image_entry_visible: false,
+            create_image_entry_labels: [],
+            create_image_mode_active: false,
+            create_image_mode_labels: [],
+            template_cards: [],
+            upload_trigger_visible: false,
+            upload_trigger_labels: [],
+            upload_menu_visible: false,
+            upload_affordances: [],
+            tool_buttons: ['Tools'],
+            mode_buttons: ['Open mode picker'],
+        });
+    });
+    it('suppresses generic upload affordances without create-image evidence', () => {
+        expect(normalizeGeminiImageCapabilities({
+            pageUrl: 'https://gemini.google.com/app/abc',
+            pageTitle: 'Gemini',
+            uploadTriggerLabels: ['Open upload file menu'],
+            uploadAffordances: ['Upload files', 'Add from Drive'],
+            uploadMenuVisible: true,
+        })).toEqual({
+            status: 'absent',
+            reason: '',
+            page_url: 'https://gemini.google.com/app/abc',
+            page_title: 'Gemini',
+            activation_path: '',
+            create_image_entry_visible: false,
+            create_image_entry_labels: [],
+            create_image_mode_active: false,
+            create_image_mode_labels: [],
+            template_cards: [],
+            upload_trigger_visible: false,
+            upload_trigger_labels: [],
+            upload_menu_visible: false,
+            upload_affordances: [],
+            tool_buttons: [],
+            mode_buttons: [],
+        });
+    });
+    it('keeps upload fields suppressed when only the create-image entry is visible', () => {
+        expect(normalizeGeminiImageCapabilities({
+            pageUrl: 'https://gemini.google.com/app/abc',
+            pageTitle: 'Gemini',
+            createImageEntryLabels: ['Create image'],
+            uploadTriggerLabels: ['Open upload file menu'],
+            uploadAffordances: ['Upload files', 'Add from Drive'],
+            uploadMenuVisible: true,
+        })).toEqual({
+            status: 'verified',
+            reason: '',
+            page_url: 'https://gemini.google.com/app/abc',
+            page_title: 'Gemini',
+            activation_path: '',
+            create_image_entry_visible: true,
+            create_image_entry_labels: ['Create image'],
+            create_image_mode_active: false,
+            create_image_mode_labels: [],
+            template_cards: [],
+            upload_trigger_visible: false,
+            upload_trigger_labels: [],
+            upload_menu_visible: false,
+            upload_affordances: [],
+            tool_buttons: [],
+            mode_buttons: [],
+        });
+    });
+});
+
+describe('pickGeminiDeepResearchExportUrl' , () => {
     it('prefers docs.google.com document url over sheets and noise endpoints', () => {
         const picked = pickGeminiDeepResearchExportUrl([
             'xhr::https://gemini.google.com/_/BardChatUi/data/batchexecute?rpcids=ESY5D',
