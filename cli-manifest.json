@@ -2930,6 +2930,25 @@
   },
   {
     "site": "chatgpt",
+    "name": "image-capabilities",
+    "description": "Inspect the currently visible ChatGPT Images capabilities for the logged-in browser session",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "Category",
+      "Name",
+      "Value"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-capabilities.js",
+    "sourceFile": "chatgpt/image-capabilities.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "model",
     "description": "Switch ChatGPT Desktop model/mode (auto, instant, thinking, 5.2-instant, 5.2-thinking)",
     "domain": "localhost",
