@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildChatGPTDeepResearchRow,
+  buildChatGPTImageCapabilityRows,
   classifyChatGPTDeepResearchSnapshot,
   extractChatGPTConversationId,
+  normalizeChatGPTImageCapabilitySnapshot,
   parseChatGPTConversationUrl,
   parseChatGPTTitleMatchMode,
   resolveChatGPTConversationForQuery,
@@ -58,4 +60,25 @@ describe('chatgpt/utils', () => {
       mode_label: '深度研究',
     });
   });
+  it('normalizes image capability snapshots and builds capability rows', () => {
+    const snapshot = normalizeChatGPTImageCapabilitySnapshot({
+      url: 'https://chatgpt.com/images/',
+      title: 'ChatGPT 图片 | AI 图片生成器',
+      accountTier: 'Pro',
+      promptPlaceholder: '描述新图片',
+      addButtonLabel: '添加文件等',
+      uploadInputs: ['upload-files (jpg,png)', 'upload-camera (image/*)', 'upload-files (jpg,png)'],
+      styleCards: ['漫画风潮', '鎏金塑像'],
+      taskCards: ['创作专业产品照片'],
+      resultActions: ['编辑图片', '分享此图片'],
+    });
+    expect(snapshot.uploadInputs).toEqual(['upload-files (jpg,png)', 'upload-camera (image/*)']);
+    const rows = buildChatGPTImageCapabilityRows(snapshot);
+    expect(rows).toContainEqual({ Category: 'account', Name: 'tier', Value: 'Pro' });
+    expect(rows).toContainEqual({ Category: 'composer', Name: 'prompt_placeholder', Value: '描述新图片' });
+    expect(rows).toContainEqual({ Category: 'style_preset', Name: 'card', Value: '漫画风潮' });
+    expect(rows).toContainEqual({ Category: 'task_template', Name: 'card', Value: '创作专业产品照片' });
+    expect(rows).toContainEqual({ Category: 'result_action', Name: 'action', Value: '编辑图片' });
+  });
+
 });

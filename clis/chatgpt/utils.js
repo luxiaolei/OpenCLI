@@ -482,3 +482,176 @@ export async function getChatGPTConversationList(page) {
   const items = await page.evaluate(buildConversationListScript()).catch(() => []);
   return Array.isArray(items) ? items.filter((item) => item && typeof item.Url === 'string') : [];
 }
+
+export const CHATGPT_IMAGES_URL = 'https://chatgpt.com/images';
+
+const CHATGPT_IMAGE_PROMPT_SELECTORS = [
+  'textarea[placeholder*="描述新图片"]',
+  'textarea[aria-label*="描述新图片"]',
+  'textarea[placeholder*="Describe"]',
+  'textarea[aria-label*="Describe"]',
+  'textarea[data-testid="prompt-textarea"]',
+  'textarea',
+];
+
+const CHATGPT_IMAGE_STYLE_SECTION_LABELS = ['在图像上试用风格效果', 'Try styles on images'];
+const CHATGPT_IMAGE_TASK_SECTION_LABELS = ['发现新事物', 'Discover something new'];
+const CHATGPT_IMAGE_RESULT_ACTION_LABELS = [
+  '打开图片',
+  'Open image',
+  '编辑图片',
+  'Edit image',
+  '分享此图片',
+  'Share this image',
+  '下载图片',
+  'Download image',
+  '重新生成',
+  'Regenerate',
+  '变体',
+  'Variant',
+  'Variation',
+  '放大',
+  'Upscale',
+];
+
+function buildImageCapabilitiesScript() {
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const uniq = (items) => Array.from(new Set(items.map((item) => clean(item)).filter(Boolean)));
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const lower = (value) => clean(value).toLowerCase();
+
+    const accountButton = document.querySelector('[data-testid="accounts-profile-button"]');
+    const promptInput = document.querySelector('textarea[name="prompt-textarea"]')
+      || document.querySelector('textarea[placeholder]')
+      || document.querySelector('textarea');
+    const addButton = document.querySelector('#composer-plus-btn')
+      || Array.from(document.querySelectorAll('button')).find((node) => {
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('添加文件等') || label.includes('add file');
+      });
+    const voiceButton = Array.from(document.querySelectorAll('button')).find((node) => {
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label.includes('开始听写') || label.includes('启动语音功能') || label.includes('start dictation') || label.includes('voice');
+    }) || null;
+    const sendButton = document.querySelector('#composer-submit-button')
+      || Array.from(document.querySelectorAll('button')).find((node) => {
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('发送提示') || label.includes('send prompt');
+      });
+
+    const findSectionByHeading = (heading) => Array.from(document.querySelectorAll('section')).find((section) => isVisible(section) && textOf(section).includes(heading)) || null;
+    const collectSectionButtons = (section) => uniq(Array.from(section ? section.querySelectorAll('button') : []).map((button) => {
+      const label = attrOf(button, 'title') || attrOf(button, 'aria-label') || textOf(button);
+      return clean(label).replace(/[›>].*$/, '');
+    }).filter((label) => {
+      const normalized = lower(label);
+      return label && !normalized.includes('上一页') && !normalized.includes('下一页') && !normalized.includes('previous') && !normalized.includes('next') && !normalized.includes('添加你自己的图片');
+    }));
+
+    const styleSection = findSectionByHeading('在图像上试用风格效果') || findSectionByHeading('Try styles on images');
+    const taskSection = findSectionByHeading('发现新事物') || findSectionByHeading('Discover something new');
+    const resultActions = uniq(Array.from(document.querySelectorAll('[data-testid="image-gen-overlay-left-actions"] button, [data-testid="image-gen-overlay-right-actions"] button, button[aria-label]')).map((button) => attrOf(button, 'aria-label') || textOf(button)).filter((label) => {
+      const normalized = lower(label);
+      return normalized.includes('打开图片') || normalized.includes('open image') || normalized.includes('编辑图片') || normalized.includes('edit image') || normalized.includes('分享此图片') || normalized.includes('share this image') || normalized.includes('下载此图片') || normalized.includes('download image');
+    }));
+    const uploadInputs = uniq(Array.from(document.querySelectorAll('input[type="file"]')).map((node) => {
+      const id = attrOf(node, 'id');
+      const accept = attrOf(node, 'accept');
+      return id || accept ? [id || 'file-input', accept ? '(' + accept + ')' : ''].filter(Boolean).join(' ') : '';
+    }));
+    const dragDropNode = Array.from(document.querySelectorAll('h3, div, span')).find((node) => {
+      const value = lower(textOf(node));
+      return value.includes('拖放图片以上传') || (value.includes('drag') && value.includes('upload'));
+    }) || null;
+
+    return {
+      url: window.location.href,
+      pathname: window.location.pathname || '',
+      title: clean(document.title || ''),
+      accountTier: textOf(accountButton).includes('Pro') ? 'Pro' : '',
+      promptPlaceholder: attrOf(promptInput, 'placeholder') || attrOf(promptInput, 'aria-label'),
+      addButtonLabel: attrOf(addButton, 'aria-label') || textOf(addButton),
+      voiceButtonLabel: attrOf(voiceButton, 'aria-label') || textOf(voiceButton),
+      sendButtonLabel: attrOf(sendButton, 'aria-label') || textOf(sendButton),
+      dragDropText: textOf(dragDropNode),
+      uploadInputs,
+      styleCards: collectSectionButtons(styleSection),
+      taskCards: collectSectionButtons(taskSection),
+      resultActions,
+      isImagesPage: (window.location.pathname || '').startsWith('/images'),
+    };
+  })()`;
+}
+
+export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
+  const asArray = (value) => Array.isArray(value) ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean))) : [];
+  return {
+    detail: String(snapshot?.detail ?? '').trim(),
+    url: String(snapshot?.url ?? '').trim(),
+    pathname: String(snapshot?.pathname ?? '').trim(),
+    title: String(snapshot?.title ?? '').trim(),
+    accountTier: String(snapshot?.accountTier ?? '').trim(),
+    promptPlaceholder: String(snapshot?.promptPlaceholder ?? '').trim(),
+    addButtonLabel: String(snapshot?.addButtonLabel ?? '').trim(),
+    voiceButtonLabel: String(snapshot?.voiceButtonLabel ?? '').trim(),
+    sendButtonLabel: String(snapshot?.sendButtonLabel ?? '').trim(),
+    dragDropText: String(snapshot?.dragDropText ?? '').trim(),
+    uploadInputs: asArray(snapshot?.uploadInputs),
+    styleCards: asArray(snapshot?.styleCards),
+    taskCards: asArray(snapshot?.taskCards),
+    resultActions: asArray(snapshot?.resultActions),
+    isImagesPage: Boolean(snapshot?.isImagesPage),
+  };
+}
+
+export function buildChatGPTImageCapabilityRows(snapshot) {
+  const normalized = normalizeChatGPTImageCapabilitySnapshot(snapshot);
+  const rows = [];
+  const push = (Category, Name, Value) => {
+    if (Value === undefined || Value === null) return;
+    const text = String(Value).trim();
+    if (!text) return;
+    rows.push({ Category, Name, Value: text });
+  };
+
+  push('page', 'url', normalized.url);
+  push('page', 'title', normalized.title);
+  push('debug', 'detail', normalized.detail);
+  push('account', 'tier', normalized.accountTier);
+  push('composer', 'prompt_placeholder', normalized.promptPlaceholder);
+  push('composer', 'add_button', normalized.addButtonLabel);
+  push('composer', 'voice_button', normalized.voiceButtonLabel);
+  push('composer', 'send_button', normalized.sendButtonLabel);
+  push('upload', 'drag_drop', normalized.dragDropText || (normalized.uploadInputs.length ? 'supported' : ''));
+  normalized.uploadInputs.forEach((item) => push('upload', 'input', item));
+  normalized.styleCards.forEach((item) => push('style_preset', 'card', item));
+  normalized.taskCards.forEach((item) => push('task_template', 'card', item));
+  normalized.resultActions.forEach((item) => push('result_action', 'action', item));
+  return rows;
+}
+
+export async function openChatGPTImages(page) {
+  await page.goto(CHATGPT_IMAGES_URL, { waitUntil: 'load', settleMs: 2500 });
+  await page.wait(1);
+}
+
+export async function readChatGPTImageCapabilities(page) {
+  const snapshot = await page.evaluate(buildImageCapabilitiesScript()).catch(async (error) => ({
+    url: await getCurrentChatGPTUrl(page),
+    detail: error instanceof Error ? error.message : String(error),
+  }));
+  return normalizeChatGPTImageCapabilitySnapshot(snapshot);
+}
