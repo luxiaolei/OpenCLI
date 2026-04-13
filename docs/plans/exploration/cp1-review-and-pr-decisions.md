@@ -73,7 +73,8 @@ Scope: unify CP-1 exploration findings into branch and PR decisions
 - allowed `ui_state` values in Phase 1:
   - `landing`
   - `input_ready`
-  - `thread_created`
+  - `submitted`
+  - `pending`
   - `retry_required`
   - `unknown`
 - explicitly out of scope in Phase 1:

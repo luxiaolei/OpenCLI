@@ -66,14 +66,14 @@ describe('chatgpt/deep-research-status', () => {
       conversationId: 'abc123',
       threadTitle: 'ChatGPT Deep Research 概述',
       modeLabel: '深度研究',
-      uiState: 'thread_created',
+      uiState: 'pending',
     });
   });
 
   it('opens a direct conversation url when provided', async () => {
     const result = await deepResearchStatusCommand.func(page, { query: 'https://chatgpt.com/c/abc123', match: 'contains' });
     expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/abc123');
-    expect(result[0].ui_state).toBe('thread_created');
+    expect(result[0].ui_state).toBe('pending');
   });
 
   it('opens deep research and resolves a title query', async () => {
@@ -83,7 +83,7 @@ describe('chatgpt/deep-research-status', () => {
       { Title: 'ChatGPT Deep Research 概述', Url: 'https://chatgpt.com/c/abc123' },
     ], '概述', 'contains');
     expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/abc123');
-    expect(result[0].ui_state).toBe('thread_created');
+    expect(result[0].ui_state).toBe('pending');
   });
 
   it('falls back to current snapshot when query is empty and no conversations are available', async () => {

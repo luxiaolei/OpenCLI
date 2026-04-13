@@ -1,6 +1,7 @@
 export const CHATGPT_WEB_DOMAIN = 'chatgpt.com';
 export const CHATGPT_DEEP_RESEARCH_URL = 'https://chatgpt.com/deep-research';
 export const CHATGPT_DEEP_RESEARCH_MODE_LABELS = ['Deep Research', '深度研究'];
+const CHATGPT_DEEP_RESEARCH_UI_STATES = new Set(['landing', 'input_ready', 'submitted', 'pending', 'retry_required', 'unknown']);
 
 const CHATGPT_COMPOSER_SELECTORS = [
   'textarea[placeholder*="获取详细报告"]',
@@ -84,7 +85,7 @@ function buildSnapshotScript() {
 
     const retryNode = findActionNode((label) => {
       const hasMode = label.includes('deep research') || label.includes('深度研究');
-      const hasRetry = label.includes('click to retry') || label.includes('点击以重试') || label.includes('retry');
+      const hasRetry = label.includes('click to retry') || label.includes('点击以重试');
       return hasMode && hasRetry;
     });
 
@@ -380,12 +381,17 @@ export function normalizeChatGPTModeLabel(value) {
   return raw;
 }
 
+export function normalizeChatGPTDeepResearchUiState(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return CHATGPT_DEEP_RESEARCH_UI_STATES.has(raw) ? raw : '';
+}
+
 export function classifyChatGPTDeepResearchSnapshot(snapshot) {
-  if (snapshot?.retryLabel && /(click to retry|点击以重试|retry)/i.test(snapshot.retryLabel)) {
+  if (snapshot?.retryLabel && /(deep research|深度研究)/i.test(snapshot.retryLabel) && /(click to retry|点击以重试)/i.test(snapshot.retryLabel)) {
     return 'retry_required';
   }
-  if (snapshot?.conversationId) {
-    return 'thread_created';
+  if (snapshot?.conversationId && snapshot?.modeLabel) {
+    return 'pending';
   }
   if (snapshot?.composerHasText && snapshot?.sendEnabled) {
     return 'input_ready';
@@ -399,6 +405,7 @@ export function classifyChatGPTDeepResearchSnapshot(snapshot) {
 export function normalizeChatGPTDeepResearchSnapshot(snapshot) {
   const url = String(snapshot?.url ?? '').trim();
   const conversationId = String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(url);
+  const explicitUiState = normalizeChatGPTDeepResearchUiState(snapshot?.uiState ?? '');
   const normalized = {
     url,
     pathname: String(snapshot?.pathname ?? '').trim(),
@@ -415,7 +422,7 @@ export function normalizeChatGPTDeepResearchSnapshot(snapshot) {
     isDeepResearchPage: Boolean(snapshot?.isDeepResearchPage),
     isSignedIn: typeof snapshot?.isSignedIn === 'boolean' ? snapshot.isSignedIn : null,
   };
-  normalized.uiState = classifyChatGPTDeepResearchSnapshot(normalized);
+  normalized.uiState = explicitUiState || classifyChatGPTDeepResearchSnapshot(normalized);
   return normalized;
 }
 
@@ -465,17 +472,27 @@ export async function sendChatGPTDeepResearchPrompt(page, prompt) {
 export async function waitForChatGPTDeepResearchState(page, timeoutSeconds = 30) {
   const timeout = parseChatGPTPositiveInt(timeoutSeconds, 30);
   let lastSnapshot = await readChatGPTDeepResearchSnapshot(page);
-  if (lastSnapshot.uiState === 'thread_created' || lastSnapshot.uiState === 'retry_required') {
+  let pendingSnapshot = lastSnapshot.uiState === 'pending' ? lastSnapshot : null;
+  if (lastSnapshot.uiState === 'retry_required') {
     return lastSnapshot;
   }
   for (let attempt = 0; attempt < timeout; attempt += 1) {
     await page.wait(1);
     lastSnapshot = await readChatGPTDeepResearchSnapshot(page);
-    if (lastSnapshot.uiState === 'thread_created' || lastSnapshot.uiState === 'retry_required') {
+    if (lastSnapshot.uiState === 'retry_required') {
       return lastSnapshot;
     }
+    if (lastSnapshot.uiState === 'pending') {
+      pendingSnapshot = lastSnapshot;
+    }
   }
-  return lastSnapshot;
+  if (pendingSnapshot) {
+    return pendingSnapshot;
+  }
+  return {
+    ...lastSnapshot,
+    uiState: 'submitted',
+  };
 }
 
 export async function getChatGPTConversationList(page) {

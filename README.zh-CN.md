@@ -265,6 +265,7 @@ npm link
 87+ 适配器 — **[→ 查看完整命令列表](./docs/adapters/index.md)**
 
 Gemini 说明：`opencli gemini image-capabilities` 用于只读检查当前可见的 `Create image` 能力面；现有 `opencli gemini image --rt/--st` 仍是 prompt 级增强，不代表已点击 Gemini 原生比例 / 风格控件。
+ChatGPT 说明：`opencli chatgpt deep-research` / `deep-research-status` 当前只保守返回 `submitted` / `pending` / `retry_required` 这类可见 UI 状态，不承诺已完成、导出链接或分享链接。
 
 ### 外部 CLI 枢纽
 

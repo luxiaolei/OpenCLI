@@ -61,20 +61,38 @@ describe('chatgpt/deep-research', () => {
       conversationId: 'abc123',
       threadTitle: 'ChatGPT Deep Research 概述',
       modeLabel: '深度研究',
-      uiState: 'thread_created',
+      uiState: 'pending',
     });
   });
 
-  it('opens deep research, sends the prompt, and returns the conservative thread state', async () => {
+  it('opens deep research, sends the prompt, and returns the conservative pending state', async () => {
     const result = await deepResearchCommand.func(page, { prompt: 'research this topic', timeout: '45' });
     expect(mockOpenDeepResearch).toHaveBeenCalledTimes(1);
     expect(mockSendPrompt).toHaveBeenCalledWith(page, 'research this topic');
     expect(mockWaitForState).toHaveBeenCalledWith(page, 45);
     expect(result).toEqual([{
-      ui_state: 'thread_created',
+      ui_state: 'pending',
       conversation_url: 'https://chatgpt.com/c/abc123',
       conversation_id: 'abc123',
       thread_title: 'ChatGPT Deep Research 概述',
+      mode_label: '深度研究',
+    }]);
+  });
+
+  it('returns submitted when no pending thread becomes visible before timeout', async () => {
+    mockWaitForState.mockResolvedValue({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究',
+      uiState: 'submitted',
+    });
+    const result = await deepResearchCommand.func(page, { prompt: 'research this topic', timeout: '5' });
+    expect(result).toEqual([{
+      ui_state: 'submitted',
+      conversation_url: 'https://chatgpt.com/deep-research',
+      conversation_id: '',
+      thread_title: '',
       mode_label: '深度研究',
     }]);
   });

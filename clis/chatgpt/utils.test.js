@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildChatGPTDeepResearchRow,
   buildChatGPTImageCapabilityRows,
@@ -8,6 +8,7 @@ import {
   parseChatGPTConversationUrl,
   parseChatGPTTitleMatchMode,
   resolveChatGPTConversationForQuery,
+  waitForChatGPTDeepResearchState,
 } from './utils.js';
 
 describe('chatgpt/utils', () => {
@@ -41,8 +42,13 @@ describe('chatgpt/utils', () => {
   it('classifies snapshot states conservatively', () => {
     expect(classifyChatGPTDeepResearchSnapshot({ isDeepResearchPage: true })).toBe('landing');
     expect(classifyChatGPTDeepResearchSnapshot({ isDeepResearchPage: true, composerHasText: true, sendEnabled: true })).toBe('input_ready');
-    expect(classifyChatGPTDeepResearchSnapshot({ conversationId: 'abc123' })).toBe('thread_created');
+    expect(classifyChatGPTDeepResearchSnapshot({ conversationId: 'abc123' })).toBe('unknown');
     expect(classifyChatGPTDeepResearchSnapshot({ conversationId: 'abc123', retryLabel: '深度研究，点击以重试' })).toBe('retry_required');
+  });
+
+  it('does not let generic retry copy override a pending thread', () => {
+    expect(classifyChatGPTDeepResearchSnapshot({ conversationId: 'abc123', retryLabel: 'Retry generation' })).toBe('unknown');
+    expect(classifyChatGPTDeepResearchSnapshot({ conversationId: 'abc123', retryLabel: 'Deep Research' })).toBe('unknown');
   });
 
   it('builds a stable command row', () => {
@@ -53,13 +59,47 @@ describe('chatgpt/utils', () => {
       modeLabel: '深度研究',
       retryLabel: '',
     })).toEqual({
-      ui_state: 'thread_created',
+      ui_state: 'pending',
       conversation_url: 'https://chatgpt.com/c/abc123',
       conversation_id: 'abc123',
       thread_title: 'ChatGPT Deep Research 概述',
       mode_label: '深度研究',
     });
   });
+
+  it('waits through pending to allow retry_required to win', async () => {
+    const snapshots = [
+      { url: 'https://chatgpt.com/c/abc123', conversationId: 'abc123', modeLabel: '深度研究' },
+      { url: 'https://chatgpt.com/c/abc123', conversationId: 'abc123', modeLabel: '深度研究' },
+      { url: 'https://chatgpt.com/c/abc123', conversationId: 'abc123', modeLabel: '深度研究', retryLabel: '深度研究，点击以重试' },
+    ];
+    const page = {
+      evaluate: vi.fn().mockImplementation(() => Promise.resolve(snapshots.shift() ?? snapshots.at(-1))),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await waitForChatGPTDeepResearchState(page, 3);
+
+    expect(result.uiState).toBe('retry_required');
+    expect(page.wait).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns submitted after timeout when no pending thread is visible yet', async () => {
+    const page = {
+      evaluate: vi.fn().mockResolvedValue({
+        url: 'https://chatgpt.com/deep-research',
+        isDeepResearchPage: true,
+        modeLabel: '深度研究',
+      }),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await waitForChatGPTDeepResearchState(page, 2);
+
+    expect(result.uiState).toBe('submitted');
+    expect(page.wait).toHaveBeenCalledTimes(2);
+  });
+
   it('normalizes image capability snapshots and builds capability rows', () => {
     const snapshot = normalizeChatGPTImageCapabilitySnapshot({
       url: 'https://chatgpt.com/images/',
@@ -116,5 +156,4 @@ describe('chatgpt/utils', () => {
       { Category: 'state', Name: 'reason', Value: 'no-image-context' },
     ]);
   });
-
 });
