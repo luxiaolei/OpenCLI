@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildChatGPTDeepResearchRow,
   buildChatGPTImageCapabilityRows,
+  buildChatGPTImageCreateRow,
   classifyChatGPTDeepResearchSnapshot,
   extractChatGPTConversationId,
+  hasChatGPTImageContext,
   normalizeChatGPTImageCapabilitySnapshot,
   parseChatGPTConversationUrl,
   parseChatGPTTitleMatchMode,
@@ -155,5 +157,30 @@ describe('chatgpt/utils', () => {
       { Category: 'state', Name: 'status', Value: 'absent' },
       { Category: 'state', Name: 'reason', Value: 'no-image-context' },
     ]);
+  });
+
+  it('detects image-specific context conservatively', () => {
+    expect(hasChatGPTImageContext({ isImagesPage: true, styleCards: ['漫画风潮'] })).toBe(true);
+    expect(hasChatGPTImageContext({ isImagesPage: true, taskCards: ['创作专业产品照片'] })).toBe(true);
+    expect(hasChatGPTImageContext({ isImagesPage: true, uploadInputs: ['file-input (image/png,.png)'] })).toBe(true);
+    expect(hasChatGPTImageContext({ isImagesPage: false, styleCards: ['漫画风潮'] })).toBe(false);
+    expect(hasChatGPTImageContext({ isImagesPage: true })).toBe(false);
+  });
+
+  it('builds a stable row for image create responses', () => {
+    expect(buildChatGPTImageCreateRow({
+      status: 'result_visible',
+      url: 'https://chatgpt.com/c/abc123',
+      title: 'OpenAI ChatGPT',
+      accountTier: 'Pro',
+      resultActionLabels: ['打开图片：蓝色陶瓷杯', '编辑图片：蓝色陶瓷杯', '分享此图片：蓝色陶瓷杯'],
+    })).toEqual({
+      action: 'create',
+      status: 'result_visible',
+      page_url: 'https://chatgpt.com/c/abc123',
+      page_title: 'OpenAI ChatGPT',
+      account_tier: 'Pro',
+      conversation_id: 'abc123',
+    });
   });
 });
