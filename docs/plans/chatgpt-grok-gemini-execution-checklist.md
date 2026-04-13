@@ -71,7 +71,7 @@ PR: `feat(chatgpt): add deep-research and deep-research-status commands`
 - [ ] Add `clis/chatgpt/deep-research-status.ts`
 - [ ] Add `clis/chatgpt/utils.ts`
 - [ ] Extend `clis/chatgpt/ax.ts` only where helpers are clearly reusable
-- [ ] Return conservative states only: `landing`, `input_ready`, `thread_created`, `retry_required`, `unknown`
+- [ ] Return conservative states only: `landing`, `input_ready`, `submitted`, `pending`, `retry_required`, `unknown`
 - [ ] Do **not** promise `running/completed/export` in Phase 1
 - [ ] Add tests and docs in the same PR
 

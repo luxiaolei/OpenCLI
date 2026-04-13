@@ -12,7 +12,7 @@ import {
 export const deepResearchCommand = cli({
   site: 'chatgpt',
   name: 'deep-research',
-  description: 'Start a ChatGPT Deep Research thread and return a conservative visible UI state',
+  description: 'Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state',
   domain: CHATGPT_WEB_DOMAIN,
   strategy: Strategy.COOKIE,
   browser: true,
@@ -21,7 +21,7 @@ export const deepResearchCommand = cli({
   timeoutSeconds: 180,
   args: [
     { name: 'prompt', required: true, positional: true, help: 'Prompt to send into ChatGPT Deep Research' },
-    { name: 'timeout', required: false, help: 'Max seconds to wait for a thread/retry-visible state (default: 30)', default: '30' },
+    { name: 'timeout', required: false, help: 'Max seconds to wait for retry-required before falling back to submitted/pending (default: 30)', default: '30' },
   ],
   columns: ['ui_state', 'conversation_url', 'conversation_id', 'thread_title', 'mode_label'],
   func: async (page, kwargs) => {

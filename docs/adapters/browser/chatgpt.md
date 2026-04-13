@@ -6,7 +6,7 @@
 
 | Command | Description |
 |---------|-------------|
-| `opencli chatgpt deep-research <prompt>` | Start a ChatGPT Deep Research thread and return a conservative visible UI state |
+| `opencli chatgpt deep-research <prompt>` | Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state |
 | `opencli chatgpt deep-research-status [query]` | Re-open a ChatGPT Deep Research thread and classify only the visible UI state |
 | `opencli chatgpt image-capabilities` | Inspect the currently visible ChatGPT Images workbench capabilities for the logged-in browser session |
 
@@ -39,7 +39,7 @@ opencli chatgpt image-capabilities
 | Option | Description |
 |--------|-------------|
 | `prompt` | Prompt to send (required positional argument) |
-| `--timeout` | Max seconds to wait for a visible thread/retry state (default: `30`) |
+| `--timeout` | Max seconds to wait for `retry_required` before falling back to `submitted` / `pending` (default: `30`) |
 
 ### `deep-research-status`
 
@@ -66,7 +66,7 @@ This command does **not** currently promise or infer:
 ## Behavior
 
 - These commands drive the **ChatGPT web UI**, not the macOS desktop app.
-- `deep-research` is intentionally conservative in Phase 1: it opens `/deep-research`, injects the prompt, sends it, and only returns a **visible UI classification**.
+- `deep-research` is intentionally conservative in Phase 1: it opens `/deep-research`, injects the prompt, sends it, waits for a stronger visible signal, and then returns only a **visible UI classification**.
 - `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI.
 - `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities (for example upload affordances, preset cards, task cards, and visible result-card actions).
 
@@ -76,7 +76,8 @@ The browser-backed MVP only returns these states:
 
 - `landing`
 - `input_ready`
-- `thread_created`
+- `submitted`
+- `pending`
 - `retry_required`
 - `unknown`
 
@@ -103,6 +104,6 @@ These browser commands do **not** currently promise:
 
 - This adapter depends on the current logged-in browser session and may fail if ChatGPT shows login, consent, quota, feature-gating, or other blocking UI.
 - The landing hero text on `/deep-research` is not stable; the command does **not** rely on one fixed headline.
-- The current Phase-1 implementation treats `深度研究，点击以重试` / `Deep Research, click to retry` as `retry_required` instead of pretending the run is actively progressing.
+- The current Phase-1 implementation treats `深度研究，点击以重试` / `Deep Research, click to retry` as `retry_required`, distinguishes that from ordinary `pending`, and does not pretend the run is completed/exportable.
 - DOM/product changes on ChatGPT can break composer detection, thread discovery, state classification, or image capability inspection.
 - For desktop-app commands such as `status`, `new`, `send`, `read`, `ask`, and `model`, see [docs/adapters/desktop/chatgpt.md](../desktop/chatgpt.md).

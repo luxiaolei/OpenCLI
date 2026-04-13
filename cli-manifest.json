@@ -2859,7 +2859,7 @@
   {
     "site": "chatgpt",
     "name": "deep-research",
-    "description": "Start a ChatGPT Deep Research thread and return a conservative visible UI state",
+    "description": "Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,
@@ -2876,7 +2876,7 @@
         "type": "str",
         "default": "30",
         "required": false,
-        "help": "Max seconds to wait for a thread/retry-visible state (default: 30)"
+        "help": "Max seconds to wait for retry-required before falling back to submitted/pending (default: 30)"
       }
     ],
     "columns": [

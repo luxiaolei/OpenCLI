@@ -216,6 +216,7 @@ To load the source Browser Bridge extension:
 87+ adapters in total — **[→ see all supported sites & commands](./docs/adapters/index.md)**
 
 Gemini note: `opencli gemini image-capabilities` is the capability-first inspector for visible `Create image` UI. Current `opencli gemini image --rt/--st` flags are prompt-level augmentation, not verified native Gemini ratio/style controls.
+ChatGPT note: `opencli chatgpt deep-research` / `deep-research-status` intentionally report only conservative `submitted` / `pending` / `retry_required` UI states; they do not imply completion, export URLs, or share URLs.
 
 ## CLI Hub
 
