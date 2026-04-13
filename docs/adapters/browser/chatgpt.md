@@ -9,6 +9,7 @@
 | `opencli chatgpt deep-research <prompt>` | Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state |
 | `opencli chatgpt deep-research-status [query]` | Re-open a ChatGPT Deep Research thread and classify only the visible UI state |
 | `opencli chatgpt image-capabilities` | Inspect the currently visible ChatGPT Images workbench capabilities for the logged-in browser session |
+| `opencli chatgpt image-create <prompt>` | Prompt-only image creation MVP for the ChatGPT `/images` workbench |
 
 ## Usage Examples
 
@@ -30,6 +31,9 @@ opencli chatgpt deep-research-status "Deep Research 概述" --match contains
 
 # Inspect the currently visible ChatGPT Images workbench capabilities
 opencli chatgpt image-capabilities
+
+# Create an image from the ChatGPT /images workbench (prompt-only MVP)
+opencli chatgpt image-create "A simple blue ceramic mug on a plain white background"
 ```
 
 ## Options
@@ -63,16 +67,47 @@ This command does **not** currently promise or infer:
 - `variant`
 - `download`
 
+### `image-create`
+
+| Option | Description |
+|--------|-------------|
+| `prompt` | Prompt to send to the ChatGPT `/images` workbench (required positional argument) |
+| `--timeout` | Max seconds to wait for visible result actions before falling back to `submitted` (default: `30`) |
+
+#### `image-create` states
+
+The prompt-only MVP currently returns only:
+- `blocked`
+- `failed`
+- `submitted`
+- `result_visible`
+
+#### `image-create` out of scope
+
+This command does **not** currently promise or expose:
+- `model`
+- `quality`
+- `aspect-ratio`
+- `size`
+- `seed`
+- `variant`
+- `download`
+- `open`
+- `edit`
+- `share`
+- `list`
+
 ## Behavior
 
 - These commands drive the **ChatGPT web UI**, not the macOS desktop app.
 - `deep-research` is intentionally conservative in Phase 1: it opens `/deep-research`, injects the prompt, sends it, waits for a stronger visible signal, and then returns only a **visible UI classification**.
 - `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI.
 - `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities (for example upload affordances, preset cards, task cards, and visible result-card actions).
+- `image-create` is intentionally small in its first cut: it does a capability-first preflight on `/images`, sends a prompt, and only returns a conservative submission/result state.
 
-## Phase-1 UI States
+## Deep Research Phase-1 UI States
 
-The browser-backed MVP only returns these states:
+The browser-backed Deep Research MVP only returns these states:
 
 - `landing`
 - `input_ready`

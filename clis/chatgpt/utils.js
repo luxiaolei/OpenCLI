@@ -25,6 +25,30 @@ const CHATGPT_SEND_BUTTON_SELECTORS = [
   'button[type="submit"]',
 ];
 
+const CHATGPT_IMAGE_COMPOSER_SELECTORS = [
+  'textarea[placeholder*="描述新图片"]',
+  'textarea[aria-label*="描述新图片"]',
+  'textarea[placeholder*="Describe a new image"]',
+  'textarea[aria-label*="Describe a new image"]',
+  'textarea[placeholder*="image"]',
+  'textarea[aria-label*="image"]',
+  'textarea[data-testid="prompt-textarea"]',
+  'textarea',
+  '[contenteditable="true"][data-lexical-editor="true"]',
+  '[contenteditable="true"][role="textbox"]',
+  '[contenteditable="true"]',
+  '[role="textbox"][contenteditable="true"]',
+];
+
+const CHATGPT_IMAGE_SEND_BUTTON_SELECTORS = [
+  '#composer-submit-button',
+  'button[aria-label="发送提示"]',
+  'button[aria-label="Send prompt"]',
+  'button[aria-label*="发送"]',
+  'button[aria-label*="Send"]',
+  'button[type="submit"]',
+];
+
 function buildSnapshotScript() {
   const composerSelectorsJson = JSON.stringify(CHATGPT_COMPOSER_SELECTORS);
   const sendSelectorsJson = JSON.stringify(CHATGPT_SEND_BUTTON_SELECTORS);
@@ -667,4 +691,317 @@ export async function readChatGPTImageCapabilities(page) {
     detail: error instanceof Error ? error.message : String(error),
   }));
   return normalizeChatGPTImageCapabilitySnapshot(snapshot);
+}
+
+function buildImageCreateStateScript() {
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const uniq = (items) => Array.from(new Set(items.map((item) => clean(item)).filter(Boolean)));
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const lower = (value) => clean(value).toLowerCase();
+    const actionSelectors = '[data-testid="image-gen-overlay-left-actions"] button, [data-testid="image-gen-overlay-right-actions"] button, button, [role="button"], a';
+
+    const accountButton = document.querySelector('[data-testid="accounts-profile-button"]');
+    const resultActionLabels = uniq(Array.from(document.querySelectorAll(actionSelectors))
+      .filter((node) => isVisible(node))
+      .map((node) => attrOf(node, 'aria-label') || textOf(node))
+      .filter((label) => {
+        const normalized = lower(label);
+        return normalized.includes('打开图片') || normalized.includes('open image')
+          || normalized.includes('编辑图片') || normalized.includes('edit image')
+          || normalized.includes('分享此图片') || normalized.includes('share this image');
+      }));
+
+    return {
+      url: window.location.href,
+      pathname: window.location.pathname || '',
+      title: clean(document.title || ''),
+      accountTier: textOf(accountButton).includes('Pro') ? 'Pro' : '',
+      resultActionLabels,
+      isImagesPage: (window.location.pathname || '').startsWith('/images'),
+      isConversationPage: /^\\/c\\//.test(window.location.pathname || ''),
+    };
+  })()`;
+}
+
+function buildImageCreatePromptScript(prompt) {
+  const composerSelectorsJson = JSON.stringify(CHATGPT_IMAGE_COMPOSER_SELECTORS);
+  const sendSelectorsJson = JSON.stringify(CHATGPT_IMAGE_SEND_BUTTON_SELECTORS);
+  return `((inputText) => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label')].filter(Boolean).join(' '));
+    const isDisabled = (node) => {
+      if (!(node instanceof HTMLElement)) return true;
+      if ('disabled' in node && node.disabled) return true;
+      return attrOf(node, 'aria-disabled').toLowerCase() === 'true';
+    };
+
+    const findFirstVisible = (selectors) => {
+      for (const selector of selectors) {
+        const found = Array.from(document.querySelectorAll(selector)).find((node) => isVisible(node));
+        if (found instanceof HTMLElement) return found;
+      }
+      return null;
+    };
+
+    const fillComposer = (composer, value) => {
+      composer.focus();
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        const proto = composer instanceof HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        setter?.call(composer, value);
+        composer.dispatchEvent(new Event('input', { bubbles: true }));
+        composer.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'text-input';
+      }
+
+      if (composer instanceof HTMLElement) {
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        const range = document.createRange();
+        range.selectNodeContents(composer);
+        selection?.addRange(range);
+        document.execCommand('insertText', false, value);
+        if (clean(composer.innerText || composer.textContent || '') !== clean(value)) {
+          composer.textContent = value;
+          composer.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            data: value,
+            inputType: 'insertText',
+          }));
+        }
+        return 'contenteditable';
+      }
+
+      throw new Error('No ChatGPT image composer found');
+    };
+
+    let composer = findFirstVisible(${composerSelectorsJson});
+    if (!(composer instanceof HTMLElement)) {
+      composer = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]'))
+        .find((node) => isVisible(node)) || null;
+    }
+
+    if (!(composer instanceof HTMLElement)) {
+      return { ok: false, reason: 'ChatGPT image composer was not found.' };
+    }
+
+    try {
+      fillComposer(composer, inputText);
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'Failed to insert the prompt into the ChatGPT image composer.',
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    return (async () => {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        let sendButton = findFirstVisible(${sendSelectorsJson});
+        if (!(sendButton instanceof HTMLElement)) {
+          sendButton = Array.from(document.querySelectorAll('button, [role="button"]'))
+            .find((node) => {
+              if (!isVisible(node)) return false;
+              const label = combinedLabel(node).toLowerCase();
+              return label.includes('send prompt') || label.includes('发送提示');
+            }) || null;
+        }
+
+        if (sendButton instanceof HTMLElement && !isDisabled(sendButton)) {
+          sendButton.click();
+          return {
+            ok: true,
+            submitLabel: combinedLabel(sendButton),
+            submitSelector: attrOf(sendButton, 'aria-label') ? 'aria-label' : (sendButton.getAttribute('type') === 'submit' ? 'type=submit' : 'button'),
+          };
+        }
+
+        await waitFor(300);
+      }
+
+      return {
+        ok: false,
+        reason: 'ChatGPT image send button did not become clickable after prompt insertion.',
+      };
+    })();
+  })(${JSON.stringify(prompt)})`;
+}
+
+function normalizeChatGPTImageCreateStatus(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return new Set(['blocked', 'failed', 'submitted', 'result_visible']).has(raw) ? raw : '';
+}
+
+function normalizeChatGPTImageResultAction(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.includes('打开图片') || raw.includes('open image')) return 'open';
+  if (raw.includes('编辑图片') || raw.includes('edit image')) return 'edit';
+  if (raw.includes('分享此图片') || raw.includes('share this image')) return 'share';
+  return '';
+}
+
+export function hasChatGPTImageContext(snapshot) {
+  const normalized = normalizeChatGPTImageCapabilitySnapshot(snapshot);
+  return Boolean(
+    normalized.isImagesPage
+    && (normalized.styleCards.length > 0
+      || normalized.taskCards.length > 0
+      || normalized.resultActions.length > 0
+      || normalized.dragDropText
+      || normalized.uploadInputs.length > 0)
+  );
+}
+
+export function normalizeChatGPTImageCreateSnapshot(snapshot) {
+  const asArray = (value) => Array.isArray(value) ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean))) : [];
+  const pageUrl = String(snapshot?.pageUrl ?? snapshot?.url ?? '').trim();
+  const resultActionLabels = asArray(snapshot?.resultActionLabels);
+  const explicitActions = asArray(snapshot?.resultActions).map((item) => normalizeChatGPTImageResultAction(item)).filter(Boolean);
+  const derivedActions = resultActionLabels.map((item) => normalizeChatGPTImageResultAction(item)).filter(Boolean);
+  return {
+    status: normalizeChatGPTImageCreateStatus(snapshot?.status ?? ''),
+    detail: String(snapshot?.detail ?? '').trim(),
+    pageUrl,
+    pathname: String(snapshot?.pathname ?? '').trim(),
+    pageTitle: String(snapshot?.pageTitle ?? snapshot?.title ?? '').trim(),
+    accountTier: String(snapshot?.accountTier ?? '').trim(),
+    conversationId: String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(pageUrl),
+    resultActions: Array.from(new Set([...explicitActions, ...derivedActions])),
+    resultActionLabels,
+    isImagesPage: Boolean(snapshot?.isImagesPage),
+    isConversationPage: Boolean(snapshot?.isConversationPage),
+  };
+}
+
+export function buildChatGPTImageCreateRow(snapshot, extra = {}) {
+  const normalized = normalizeChatGPTImageCreateSnapshot(snapshot);
+  const status = normalizeChatGPTImageCreateStatus(extra.status ?? '')
+    || normalized.status
+    || (normalized.conversationId && normalized.resultActions.length > 0 ? 'result_visible' : 'submitted');
+  const row = {
+    action: 'create',
+    status,
+    page_url: normalized.pageUrl,
+    page_title: normalized.pageTitle,
+    account_tier: normalized.accountTier,
+    conversation_id: normalized.conversationId,
+  };
+  if (extra.reason) row.reason = String(extra.reason);
+  if (extra.detail || normalized.detail) row.detail = String(extra.detail || normalized.detail);
+  return row;
+}
+
+export async function sendChatGPTImagePrompt(page, prompt) {
+  const result = await page.evaluate(buildImageCreatePromptScript(prompt)).catch((error) => ({
+    ok: false,
+    reason: 'Failed to execute prompt insertion in ChatGPT Images.',
+    detail: error instanceof Error ? error.message : String(error),
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown send result.' };
+}
+
+async function recoverChatGPTImageCreateState(page, detail = '') {
+  try {
+    await openChatGPTImages(page);
+    const conversations = await getChatGPTConversationList(page);
+    if (conversations[0]?.Url) {
+      await openChatGPTConversation(page, conversations[0].Url);
+    }
+    const snapshot = await page.evaluate(buildImageCreateStateScript()).catch(async (error) => ({
+      url: await getCurrentChatGPTUrl(page),
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+    return normalizeChatGPTImageCreateSnapshot({
+      ...snapshot,
+      detail: String(snapshot?.detail ?? '').trim() || detail,
+    });
+  } catch (error) {
+    return normalizeChatGPTImageCreateSnapshot({
+      url: await getCurrentChatGPTUrl(page),
+      detail: detail || (error instanceof Error ? error.message : String(error)),
+    });
+  }
+}
+
+export async function readChatGPTImageCreateState(page) {
+  try {
+    const snapshot = await page.evaluate(buildImageCreateStateScript());
+    return normalizeChatGPTImageCreateSnapshot(snapshot);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/stale page identity|page not found:/i.test(detail)) {
+      return recoverChatGPTImageCreateState(page, detail);
+    }
+    return normalizeChatGPTImageCreateSnapshot({
+      url: await getCurrentChatGPTUrl(page),
+      detail,
+    });
+  }
+}
+
+export async function waitForChatGPTImageCreateState(page, timeoutSeconds = 30) {
+  const timeout = parseChatGPTPositiveInt(timeoutSeconds, 30);
+  let lastSnapshot = await readChatGPTImageCreateState(page);
+  let submittedSnapshot = lastSnapshot.conversationId ? lastSnapshot : null;
+  if (lastSnapshot.conversationId && lastSnapshot.resultActions.length > 0) {
+    return {
+      ...lastSnapshot,
+      status: 'result_visible',
+    };
+  }
+  for (let attempt = 0; attempt < timeout; attempt += 1) {
+    await page.wait(1);
+    lastSnapshot = await readChatGPTImageCreateState(page);
+    if (lastSnapshot.conversationId) {
+      submittedSnapshot = lastSnapshot;
+    }
+    if (lastSnapshot.conversationId && lastSnapshot.resultActions.length > 0) {
+      return {
+        ...lastSnapshot,
+        status: 'result_visible',
+      };
+    }
+  }
+  if (submittedSnapshot) {
+    return {
+      ...submittedSnapshot,
+      status: 'submitted',
+    };
+  }
+  return {
+    ...lastSnapshot,
+    status: 'submitted',
+  };
 }

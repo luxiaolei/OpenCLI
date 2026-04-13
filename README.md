@@ -205,7 +205,7 @@ To load the source Browser Bridge extension:
 | **1688** | `search` `item` `assets` `download` `store` |
 | **gitee** | `trending` `search` `user` |
 | **gemini** | `new` `ask` `image-capabilities` `image` `deep-research` `deep-research-result` |
-| **chatgpt** | `status` `new` `send` `read` `ask` `model` `deep-research` `deep-research-status` `image-capabilities` |
+| **chatgpt** | `status` `new` `send` `read` `ask` `model` `deep-research` `deep-research-status` `image-capabilities` `image-create` |
 | **yuanbao** | `new` `ask` |
 | **notebooklm** | `status` `list` `open` `current` `get` `history` `summary` `note-list` `notes-get` `source-list` `source-get` `source-fulltext` `source-guide` |
 | **spotify** | `auth` `status` `play` `pause` `next` `prev` `volume` `search` `queue` `shuffle` `repeat` |
@@ -216,7 +216,7 @@ To load the source Browser Bridge extension:
 87+ adapters in total — **[→ see all supported sites & commands](./docs/adapters/index.md)**
 
 Gemini note: `opencli gemini image-capabilities` is the capability-first inspector for visible `Create image` UI. Current `opencli gemini image --rt/--st` flags are prompt-level augmentation, not verified native Gemini ratio/style controls.
-ChatGPT note: `opencli chatgpt deep-research` / `deep-research-status` intentionally report only conservative `submitted` / `pending` / `retry_required` UI states; they do not imply completion, export URLs, or share URLs.
+ChatGPT note: `opencli chatgpt deep-research` / `deep-research-status` intentionally report only conservative `submitted` / `pending` / `retry_required` UI states; they do not imply completion, export URLs, or share URLs. `opencli chatgpt image-create` is a prompt-only `/images` MVP and does not promise model/quality/aspect-ratio/download/open/share/list contracts.
 
 ## CLI Hub
 
