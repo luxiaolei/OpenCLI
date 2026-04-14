@@ -2984,6 +2984,41 @@
   },
   {
     "site": "chatgpt",
+    "name": "image-edit",
+    "description": "Open the first visible ChatGPT image in /images (preferring My images) and submit a conservative edit prompt",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Edit prompt to send for the selected ChatGPT image"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to wait for a visible edited result signal before falling back to submitted (default: 30)"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "page_url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-edit.js",
+    "sourceFile": "chatgpt/image-edit.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "model",
     "description": "Switch ChatGPT Desktop model/mode (auto, instant, thinking, 5.2-instant, 5.2-thinking)",
     "domain": "localhost",
