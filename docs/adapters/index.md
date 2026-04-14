@@ -84,7 +84,7 @@ Run `opencli list` for the live registry.
 | **[lesswrong](./browser/lesswrong.md)**           | `curated` `frontpage` `new` `top` `top-week` `top-month` `top-year` `read` `comments` `user` `user-posts` `tag` `tags` `sequences` `shortform` | 🌐 Public    |
 | **[lobsters](./browser/lobsters.md)**             | `hot` `newest` `active` `tag`                                                                                                                  | 🌐 Public    |
 | **[steam](./browser/steam.md)**                   | `top-sellers`                                                                                                                                  | 🌐 Public    |
-| **[ChatGPT](./browser/chatgpt.md)**              | `deep-research` `deep-research-status` `image-capabilities` `image-create`                                                                    | 🔐 Browser   |
+| **[ChatGPT](./browser/chatgpt.md)**              | `deep-research` `deep-research-status` `image-capabilities` `image-create` `image-edit`                                                       | 🔐 Browser   |
 
 ## Desktop Adapters
 

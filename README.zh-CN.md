@@ -199,7 +199,7 @@ npm link
 | **v2ex** | `hot` `latest` `topic` `node` `user` `member` `replies` `nodes` `daily` `me` `notifications` | 公开 / 浏览器 |
 | **xueqiu** | `feed` `hot-stock` `hot` `search` `stock` `comments` `watchlist` `earnings-date` `fund-holdings` `fund-snapshot` | 浏览器 |
 | **antigravity** | `status` `send` `read` `new` `dump` `extract-code` `model` `watch` | 桌面端 |
-| **chatgpt** | `status` `new` `send` `read` `ask` `model` `deep-research` `deep-research-status` `image-capabilities` `image-create` | 桌面端 / 浏览器 |
+| **chatgpt** | `status` `new` `send` `read` `ask` `model` `deep-research` `deep-research-status` `image-capabilities` `image-create` `image-edit` | 桌面端 / 浏览器 |
 | **xiaohongshu** | `search` `notifications` `feed` `user` `download` `publish` `creator-notes` `creator-note-detail` `creator-notes-summary` `creator-profile` `creator-stats` | 浏览器 |
 | **xiaoe** | `courses` `detail` `catalog` `play-url` `content` | 浏览器 |
 | **quark** | `ls` `mkdir` `mv` `rename` `rm` `save` `share-tree` | 浏览器 |
@@ -265,7 +265,7 @@ npm link
 87+ 适配器 — **[→ 查看完整命令列表](./docs/adapters/index.md)**
 
 Gemini 说明：`opencli gemini image-capabilities` 用于只读检查当前可见的 `Create image` 能力面；现有 `opencli gemini image --rt/--st` 仍是 prompt 级增强，不代表已点击 Gemini 原生比例 / 风格控件。
-ChatGPT 说明：`opencli chatgpt deep-research` / `deep-research-status` 当前只保守返回 `submitted` / `pending` / `retry_required` 这类可见 UI 状态，不承诺已完成、导出链接或分享链接。`opencli chatgpt image-create` 是 prompt-only 的 `/images` MVP，不前置承诺 model / quality / aspect-ratio / download / open / share / list 这类合同。
+ChatGPT 说明：`opencli chatgpt deep-research` / `deep-research-status` 当前只保守返回 `submitted` / `pending` / `retry_required` 这类可见 UI 状态，不承诺已完成、导出链接或分享链接。`opencli chatgpt image-create` 是 prompt-only 的 `/images` MVP，`opencli chatgpt image-edit` 则会在 `/images` 里打开当前可见的首个“打开图片”入口，并在 lightbox 里的编辑 composer 提交 prompt。两者都不前置承诺 model / quality / aspect-ratio / download / open / share / list / area-selection 这类合同。
 
 ### 外部 CLI 枢纽
 
