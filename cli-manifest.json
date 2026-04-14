@@ -2985,7 +2985,7 @@
   {
     "site": "chatgpt",
     "name": "image-edit",
-    "description": "Open the latest visible ChatGPT image in /images and submit a conservative edit prompt",
+    "description": "Open the first visible ChatGPT image in /images (preferring My images) and submit a conservative edit prompt",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,

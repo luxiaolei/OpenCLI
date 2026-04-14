@@ -10,7 +10,7 @@
 | `opencli chatgpt deep-research-status [query]` | Re-open a ChatGPT Deep Research thread and classify only the visible UI state |
 | `opencli chatgpt image-capabilities` | Inspect the currently visible ChatGPT Images workbench capabilities for the logged-in browser session |
 | `opencli chatgpt image-create <prompt>` | Prompt-only image creation MVP for the ChatGPT `/images` workbench |
-| `opencli chatgpt image-edit <prompt>` | Open the latest visible ChatGPT image on `/images` and submit a conservative edit prompt |
+| `opencli chatgpt image-edit <prompt>` | Open the first visible ChatGPT image on `/images` (preferring `My images`) and submit a conservative edit prompt |
 
 ## Usage Examples
 
@@ -36,7 +36,7 @@ opencli chatgpt image-capabilities
 # Create an image from the ChatGPT /images workbench (prompt-only MVP)
 opencli chatgpt image-create "A simple blue ceramic mug on a plain white background"
 
-# Open the latest visible image on /images and submit an edit prompt
+# Open the first visible image on /images (preferring My images) and submit an edit prompt
 opencli chatgpt image-edit "Change the background to a pale beige studio backdrop"
 ```
 
@@ -140,7 +140,7 @@ This command does **not** currently promise or expose:
 - `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI.
 - `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities (for example upload affordances, preset cards, task cards, and visible result-card actions).
 - `image-create` is intentionally small in its first cut: it does a capability-first preflight on `/images`, sends a prompt, and only returns a conservative submission/result state.
-- `image-edit` stays on `/images`, opens the first visible `Open image` entry (preferring the `My images` section), waits for the lightbox edit composer, sends the edit prompt, and only returns a conservative submission/result state.
+- `image-edit` stays on `/images`, opens the first visible `Open image` entry (preferring the `My images` section), waits for the lightbox edit composer to become ready, sends the edit prompt, and only returns a conservative submission/result state.
 
 ## Deep Research Phase-1 UI States
 

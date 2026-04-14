@@ -2,8 +2,10 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import {
   CHATGPT_WEB_DOMAIN,
   extractChatGPTConversationId,
+  getChatGPTConversationList,
   getCurrentChatGPTUrl,
   hasChatGPTImageContext,
+  openChatGPTConversation,
   openChatGPTImages,
   parseChatGPTPositiveInt,
   readChatGPTImageCapabilities,
@@ -399,8 +401,7 @@ function hasChatGPTImageEditComposer(snapshot) {
   return Boolean(
     normalized.modalVisible
     && (normalized.editComposerVisible
-      || /描述编辑|describe edit/i.test(normalized.editPromptPlaceholder)
-      || normalized.modalThumbnailLabels.length > 0)
+      || /描述编辑|describe edit/i.test(normalized.editPromptPlaceholder))
   );
 }
 
@@ -433,12 +434,43 @@ export async function openChatGPTImageForEdit(page) {
   return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown open-image result.' };
 }
 
+async function recoverChatGPTImageEditState(page, detail = '') {
+  try {
+    await openChatGPTImages(page);
+    const conversations = await getChatGPTConversationList(page);
+    if (conversations[0]?.Url) {
+      await openChatGPTConversation(page, conversations[0].Url);
+    }
+    const snapshot = await page.evaluate(buildImageEditStateScript()).catch(async (error) => ({
+      url: await getCurrentChatGPTUrl(page),
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+    return normalizeChatGPTImageEditSnapshot({
+      ...snapshot,
+      detail: String(snapshot?.detail ?? '').trim() || detail,
+    });
+  } catch (error) {
+    return normalizeChatGPTImageEditSnapshot({
+      url: await getCurrentChatGPTUrl(page),
+      detail: detail || (error instanceof Error ? error.message : String(error)),
+    });
+  }
+}
+
 export async function readChatGPTImageEditState(page) {
-  const snapshot = await page.evaluate(buildImageEditStateScript()).catch(async (error) => ({
-    url: await getCurrentChatGPTUrl(page),
-    detail: error instanceof Error ? error.message : String(error),
-  }));
-  return normalizeChatGPTImageEditSnapshot(snapshot);
+  try {
+    const snapshot = await page.evaluate(buildImageEditStateScript());
+    return normalizeChatGPTImageEditSnapshot(snapshot);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/stale page identity|page not found:/i.test(detail)) {
+      return recoverChatGPTImageEditState(page, detail);
+    }
+    return normalizeChatGPTImageEditSnapshot({
+      url: await getCurrentChatGPTUrl(page),
+      detail,
+    });
+  }
 }
 
 export async function waitForChatGPTImageEditModal(page, timeoutSeconds = 10) {
@@ -514,7 +546,7 @@ export const imageEditInternals = {
 export const imageEditCommand = cli({
   site: 'chatgpt',
   name: 'image-edit',
-  description: 'Open the latest visible ChatGPT image in /images and submit a conservative edit prompt',
+  description: 'Open the first visible ChatGPT image in /images (preferring My images) and submit a conservative edit prompt',
   domain: CHATGPT_WEB_DOMAIN,
   strategy: Strategy.COOKIE,
   browser: true,

@@ -6,14 +6,18 @@ vi.mock('@jackwener/opencli/registry', () => ({
 }));
 
 const {
+  mockGetConversationList,
   mockGetCurrentUrl,
   mockHasContext,
+  mockOpenConversation,
   mockOpenImages,
   mockParsePositiveInt,
   mockReadCapabilities,
 } = vi.hoisted(() => ({
+  mockGetConversationList: vi.fn().mockResolvedValue([]),
   mockGetCurrentUrl: vi.fn().mockResolvedValue('https://chatgpt.com/images'),
   mockHasContext: vi.fn(),
+  mockOpenConversation: vi.fn(),
   mockOpenImages: vi.fn(),
   mockParsePositiveInt: vi.fn((value, fallback) => Number.parseInt(String(value ?? fallback), 10) || fallback),
   mockReadCapabilities: vi.fn(),
@@ -26,8 +30,10 @@ vi.mock('./utils.js', () => ({
     const match = raw.match(/\/c\/([^/?#]+)/);
     return match ? match[1] : '';
   },
+  getChatGPTConversationList: mockGetConversationList,
   getCurrentChatGPTUrl: mockGetCurrentUrl,
   hasChatGPTImageContext: mockHasContext,
+  openChatGPTConversation: mockOpenConversation,
   openChatGPTImages: mockOpenImages,
   parseChatGPTPositiveInt: mockParsePositiveInt,
   readChatGPTImageCapabilities: mockReadCapabilities,
@@ -37,6 +43,7 @@ import {
   buildChatGPTImageEditRow,
   imageEditCommand,
   imageEditInternals,
+  readChatGPTImageEditState,
   waitForChatGPTImageEditState,
 } from './image-edit.js';
 
@@ -243,6 +250,12 @@ describe('chatgpt/image-edit', () => {
 });
 
 describe('chatgpt/image-edit helpers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetConversationList.mockResolvedValue([]);
+    mockGetCurrentUrl.mockResolvedValue('https://chatgpt.com/images');
+  });
+
   it('builds a stable row for image edit responses', () => {
     expect(buildChatGPTImageEditRow({
       url: 'https://chatgpt.com/c/edit789',
@@ -257,6 +270,34 @@ describe('chatgpt/image-edit helpers', () => {
       page_title: 'ChatGPT',
       account_tier: 'Pro',
       conversation_id: 'edit789',
+    });
+  });
+
+  it('recovers stale page identity by reopening /images and the latest conversation', async () => {
+    mockGetConversationList.mockResolvedValue([{ Title: 'Recovered edit thread', Url: 'https://chatgpt.com/c/recovered123' }]);
+    const page = {
+      evaluate: vi.fn()
+        .mockRejectedValueOnce(new Error('stale page identity: target replaced'))
+        .mockResolvedValueOnce({
+          url: 'https://chatgpt.com/c/recovered123',
+          title: 'Recovered edit thread',
+          conversationId: 'recovered123',
+          resultActionLabels: ['编辑图片', '分享此图片'],
+          loadingHeadlines: [],
+        }),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await readChatGPTImageEditState(page);
+
+    expect(mockOpenImages).toHaveBeenCalledTimes(1);
+    expect(mockGetConversationList).toHaveBeenCalledTimes(1);
+    expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/recovered123');
+    expect(result).toMatchObject({
+      pageUrl: 'https://chatgpt.com/c/recovered123',
+      conversationId: 'recovered123',
+      resultActions: ['edit', 'share'],
+      detail: 'stale page identity: target replaced',
     });
   });
 
