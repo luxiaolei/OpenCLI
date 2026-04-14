@@ -2985,7 +2985,7 @@
   {
     "site": "chatgpt",
     "name": "image-edit",
-    "description": "Open the first visible ChatGPT image in /images (preferring My images) and submit a conservative edit prompt",
+    "description": "Open a target ChatGPT image from /images or a specific conversation URL and submit a conservative edit prompt",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,
@@ -2996,6 +2996,19 @@
         "required": true,
         "positional": true,
         "help": "Edit prompt to send for the selected ChatGPT image"
+      },
+      {
+        "name": "url",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT conversation URL to target a specific image-edit thread"
+      },
+      {
+        "name": "image",
+        "type": "str",
+        "default": "1",
+        "required": false,
+        "help": "1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)"
       },
       {
         "name": "timeout",

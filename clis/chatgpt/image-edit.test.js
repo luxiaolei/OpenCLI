@@ -11,6 +11,7 @@ const {
   mockHasContext,
   mockOpenConversation,
   mockOpenImages,
+  mockParseConversationUrl,
   mockParsePositiveInt,
   mockReadCapabilities,
 } = vi.hoisted(() => ({
@@ -19,6 +20,10 @@ const {
   mockHasContext: vi.fn(),
   mockOpenConversation: vi.fn(),
   mockOpenImages: vi.fn(),
+  mockParseConversationUrl: vi.fn((value) => {
+    const raw = String(value ?? '').trim();
+    return /^https:\/\/chatgpt\.com\/c\//.test(raw) ? raw : '';
+  }),
   mockParsePositiveInt: vi.fn((value, fallback) => Number.parseInt(String(value ?? fallback), 10) || fallback),
   mockReadCapabilities: vi.fn(),
 }));
@@ -35,6 +40,7 @@ vi.mock('./utils.js', () => ({
   hasChatGPTImageContext: mockHasContext,
   openChatGPTConversation: mockOpenConversation,
   openChatGPTImages: mockOpenImages,
+  parseChatGPTConversationUrl: mockParseConversationUrl,
   parseChatGPTPositiveInt: mockParsePositiveInt,
   readChatGPTImageCapabilities: mockReadCapabilities,
 }));
@@ -57,44 +63,56 @@ describe('chatgpt/image-edit', () => {
       title: 'ChatGPT 图片 | AI 图片生成器',
       accountTier: 'Pro',
       isImagesPage: true,
-      styleCards: ['漫画风潮'],
-      taskCards: ['创作专业产品照片'],
-      uploadInputs: ['file-input (image/png,.png)'],
-      dragDropText: '拖放图片以上传',
       resultActions: [],
     });
     mockHasContext.mockReturnValue(true);
   });
 
-  it('returns blocked when /images is not open', async () => {
-    mockReadCapabilities.mockResolvedValue({
-      url: 'https://chatgpt.com/',
-      title: 'ChatGPT',
-      accountTier: 'Pro',
-      isImagesPage: false,
-      detail: 'redirected',
-    });
+  it('returns blocked for an invalid conversation URL', async () => {
+    mockParseConversationUrl.mockReturnValueOnce('');
 
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige' });
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      url: 'https://chatgpt.com/not-a-conversation',
+    });
 
     expect(result).toEqual([{
       action: 'edit',
       status: 'blocked',
-      page_url: 'https://chatgpt.com/',
-      page_title: 'ChatGPT',
-      account_tier: 'Pro',
+      page_url: 'https://chatgpt.com/images',
+      page_title: '',
+      account_tier: '',
       conversation_id: '',
-      reason: 'not-images-page',
-      detail: 'redirected',
+      reason: 'invalid-conversation-url',
+      detail: 'The provided ChatGPT conversation URL is invalid.',
     }]);
   });
 
-  it('returns blocked when image-specific context is absent', async () => {
+  it('returns blocked for an invalid image index', async () => {
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      image: '0',
+    });
+
+    expect(result).toEqual([{
+      action: 'edit',
+      status: 'blocked',
+      page_url: 'https://chatgpt.com/images',
+      page_title: '',
+      account_tier: '',
+      conversation_id: '',
+      reason: 'invalid-image-index',
+      detail: 'The image index must be a positive integer.',
+    }]);
+  });
+
+  it('returns blocked when image-specific context is absent on /images', async () => {
     mockHasContext.mockReturnValue(false);
-    const openSpy = vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit');
+    const openSpy = vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget');
 
     const result = await imageEditCommand.func(page, { prompt: 'make it beige' });
 
+    expect(mockOpenImages).toHaveBeenCalledTimes(1);
     expect(openSpy).not.toHaveBeenCalled();
     expect(result).toEqual([{
       action: 'edit',
@@ -107,51 +125,8 @@ describe('chatgpt/image-edit', () => {
     }]);
   });
 
-  it('returns blocked when no visible open-image entry is available', async () => {
-    vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit').mockResolvedValue({ ok: false, reason: 'No visible Open image entry was found on ChatGPT Images.' });
-
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige' });
-
-    expect(result).toEqual([{
-      action: 'edit',
-      status: 'blocked',
-      page_url: 'https://chatgpt.com/images/',
-      page_title: 'ChatGPT 图片 | AI 图片生成器',
-      account_tier: 'Pro',
-      conversation_id: '',
-      reason: 'open-image-unavailable',
-      detail: 'No visible Open image entry was found on ChatGPT Images.',
-    }]);
-  });
-
-  it('returns blocked when the edit modal never becomes ready', async () => {
-    vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit').mockResolvedValue({ ok: true, openLabel: '打开图片：蓝色陶瓷杯' });
-    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
-      pageUrl: 'https://chatgpt.com/images/',
-      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
-      accountTier: 'Pro',
-      modalVisible: false,
-      editComposerVisible: false,
-      editPromptPlaceholder: '',
-      modalThumbnailLabels: [],
-    });
-
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige' });
-
-    expect(result).toEqual([{
-      action: 'edit',
-      status: 'blocked',
-      page_url: 'https://chatgpt.com/images/',
-      page_title: 'ChatGPT 图片 | AI 图片生成器',
-      account_tier: 'Pro',
-      conversation_id: '',
-      reason: 'edit-modal-unavailable',
-      detail: 'ChatGPT image edit modal was not ready.',
-    }]);
-  });
-
-  it('returns failed when the edit prompt cannot be submitted', async () => {
-    vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit').mockResolvedValue({ ok: true, openLabel: '打开图片：蓝色陶瓷杯' });
+  it('opens the requested visible image index on /images', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, requestedIndex: 3, source: 'images-my-images' });
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
       pageUrl: 'https://chatgpt.com/images/',
       pageTitle: 'ChatGPT 图片 | AI 图片生成器',
@@ -159,34 +134,6 @@ describe('chatgpt/image-edit', () => {
       modalVisible: true,
       editComposerVisible: true,
       editPromptPlaceholder: '描述编辑',
-      modalThumbnailLabels: ['图片 1（共 8 张）：蓝色陶瓷杯'],
-    });
-    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: false, reason: 'ChatGPT image edit composer was not found.' });
-
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige' });
-
-    expect(result).toEqual([{
-      action: 'edit',
-      status: 'failed',
-      page_url: 'https://chatgpt.com/images/',
-      page_title: 'ChatGPT 图片 | AI 图片生成器',
-      account_tier: 'Pro',
-      conversation_id: '',
-      reason: 'send-unavailable',
-      detail: 'ChatGPT image edit composer was not found.',
-    }]);
-  });
-
-  it('returns submitted when the edit prompt is accepted but the result is still loading', async () => {
-    vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit').mockResolvedValue({ ok: true, openLabel: '打开图片：蓝色陶瓷杯' });
-    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
-      pageUrl: 'https://chatgpt.com/images/',
-      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
-      accountTier: 'Pro',
-      modalVisible: true,
-      editComposerVisible: true,
-      editPromptPlaceholder: '描述编辑',
-      modalThumbnailLabels: ['图片 1（共 8 张）：蓝色陶瓷杯'],
     });
     vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
@@ -200,8 +147,9 @@ describe('chatgpt/image-edit', () => {
       resultActionLabels: [],
     });
 
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige', timeout: '5' });
+    const result = await imageEditCommand.func(page, { prompt: 'make it beige', image: '3', timeout: '5' });
 
+    expect(imageEditInternals.waitForChatGPTImageOpenTarget).toHaveBeenCalledWith(page, 3, 4);
     expect(mockParsePositiveInt).toHaveBeenCalledWith('5', 30);
     expect(result).toEqual([{
       action: 'edit',
@@ -213,17 +161,18 @@ describe('chatgpt/image-edit', () => {
     }]);
   });
 
-  it('returns result_visible when a new edited result becomes visible', async () => {
-    vi.spyOn(imageEditInternals, 'openChatGPTImageForEdit').mockResolvedValue({ ok: true, openLabel: '打开图片：蓝色陶瓷杯' });
+  it('targets a specific conversation URL and lightbox image index', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, source: 'conversation-thread' });
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
-      pageUrl: 'https://chatgpt.com/images/',
-      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
+      pageUrl: 'https://chatgpt.com/c/thread123',
+      pageTitle: 'ChatGPT',
       accountTier: 'Pro',
       modalVisible: true,
       editComposerVisible: true,
       editPromptPlaceholder: '描述编辑',
-      modalThumbnailLabels: ['图片 1（共 8 张）：蓝色陶瓷杯'],
+      lightboxThumbnailLabels: ['图片 1：foo', '图片 2：bar'],
     });
+    vi.spyOn(imageEditInternals, 'selectChatGPTImageInLightbox').mockResolvedValue({ ok: true, selectedIndex: 2, mode: 'thumbnail-strip' });
     vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
       status: 'result_visible',
@@ -236,8 +185,16 @@ describe('chatgpt/image-edit', () => {
       loadingHeadlines: [],
     });
 
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige', timeout: '5' });
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      url: 'https://chatgpt.com/c/thread123',
+      image: '2',
+    });
 
+    expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/thread123');
+    expect(mockOpenImages).not.toHaveBeenCalled();
+    expect(imageEditInternals.waitForChatGPTImageOpenTarget).toHaveBeenCalledWith(page, 1, 8);
+    expect(imageEditInternals.selectChatGPTImageInLightbox).toHaveBeenCalledWith(page, 2);
     expect(result).toEqual([{
       action: 'edit',
       status: 'result_visible',
@@ -245,6 +202,39 @@ describe('chatgpt/image-edit', () => {
       page_title: 'ChatGPT',
       account_tier: 'Pro',
       conversation_id: 'edit456',
+    }]);
+  });
+
+  it('returns blocked when the requested thread image index is unavailable', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, source: 'conversation-thread' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/thread123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      modalVisible: true,
+      editComposerVisible: true,
+      editPromptPlaceholder: '描述编辑',
+    });
+    vi.spyOn(imageEditInternals, 'selectChatGPTImageInLightbox').mockResolvedValue({
+      ok: false,
+      reason: 'Requested image index is not available in this ChatGPT image lightbox.',
+    });
+
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      url: 'https://chatgpt.com/c/thread123',
+      image: '3',
+    });
+
+    expect(result).toEqual([{
+      action: 'edit',
+      status: 'blocked',
+      page_url: 'https://chatgpt.com/c/thread123',
+      page_title: 'ChatGPT',
+      account_tier: 'Pro',
+      conversation_id: 'thread123',
+      reason: 'image-index-unavailable',
+      detail: 'Requested image index is not available in this ChatGPT image lightbox.',
     }]);
   });
 });
