@@ -216,7 +216,7 @@ To load the source Browser Bridge extension:
 87+ adapters in total — **[→ see all supported sites & commands](./docs/adapters/index.md)**
 
 Gemini note: `opencli gemini image-capabilities` is the capability-first inspector for visible `Create image` UI. Current `opencli gemini image --rt/--st` flags are prompt-level augmentation, not verified native Gemini ratio/style controls.
-ChatGPT note: `opencli chatgpt deep-research` / `deep-research-status` intentionally report only conservative `submitted` / `pending` / `retry_required` UI states; they do not imply completion, export URLs, or share URLs. `opencli chatgpt image-create` is a prompt-only `/images` MVP, and `opencli chatgpt image-edit` opens the first visible `Open image` entry on `/images` (preferring `My images`) and submits an edit prompt from the lightbox composer. Neither command promises model/quality/aspect-ratio/download/open/share/list/area-selection contracts.
+ChatGPT note: `opencli chatgpt deep-research` / `deep-research-status` intentionally report only conservative `submitted` / `pending` / `retry_required` UI states; they do not imply completion, export URLs, or share URLs. `opencli chatgpt image-create` is a prompt-only `/images` MVP, and `opencli chatgpt image-edit` can either open a visible `/images` entry (preferring `My images`) or target a specific thread via `--url`, with optional `--image` selection where the UI exposes it. Neither command promises model/quality/aspect-ratio/download/open/share/list/area-selection contracts.
 
 ## CLI Hub
 

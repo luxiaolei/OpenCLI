@@ -350,6 +350,7 @@ export function parseChatGPTConversationUrl(value) {
   if (!raw) return null;
   try {
     const url = new URL(raw);
+    if (url.protocol !== 'https:') return null;
     if (url.hostname !== CHATGPT_WEB_DOMAIN && !url.hostname.endsWith(`.${CHATGPT_WEB_DOMAIN}`)) return null;
     if (!/^\/c\/[^/?#]+/.test(url.pathname)) return null;
     return url.href;
