@@ -49,6 +49,7 @@ import {
   buildChatGPTImageEditRow,
   imageEditCommand,
   imageEditInternals,
+  mergeChatGPTImageEditCandidates,
   readChatGPTImageEditState,
   waitForChatGPTImageEditState,
 } from './image-edit.js';
@@ -244,6 +245,20 @@ describe('chatgpt/image-edit helpers', () => {
     vi.clearAllMocks();
     mockGetConversationList.mockResolvedValue([]);
     mockGetCurrentUrl.mockResolvedValue('https://chatgpt.com/images');
+  });
+
+  it('keeps My images entries first but still falls back to later visible /images entries', () => {
+    const my1 = { id: 'my-1' };
+    const my2 = { id: 'my-2' };
+    const other3 = { id: 'other-3' };
+    const other4 = { id: 'other-4' };
+
+    expect(mergeChatGPTImageEditCandidates([my1, my2], [my1, my2, other3, other4])).toEqual([
+      my1,
+      my2,
+      other3,
+      other4,
+    ]);
   });
 
   it('builds a stable row for image edit responses', () => {

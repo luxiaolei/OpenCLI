@@ -25,6 +25,12 @@ describe('chatgpt/utils', () => {
     expect(parseChatGPTConversationUrl('https://example.com/c/abc123')).toBeNull();
   });
 
+  it('rejects non-https conversation urls', () => {
+    expect(parseChatGPTConversationUrl('http://chatgpt.com/c/abc123')).toBeNull();
+    expect(parseChatGPTConversationUrl('ftp://chatgpt.com/c/abc123')).toBeNull();
+    expect(parseChatGPTConversationUrl('javascript://chatgpt.com/c/abc123')).toBeNull();
+  });
+
   it('parses title match mode safely', () => {
     expect(parseChatGPTTitleMatchMode('contains')).toBe('contains');
     expect(parseChatGPTTitleMatchMode('exact')).toBe('exact');

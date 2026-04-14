@@ -52,6 +52,20 @@ function parseChatGPTImageEditIndex(value, fallback = 1) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+export function mergeChatGPTImageEditCandidates(preferredItems, fallbackItems) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [
+    ...(Array.isArray(preferredItems) ? preferredItems : []),
+    ...(Array.isArray(fallbackItems) ? fallbackItems : []),
+  ]) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    merged.push(item);
+  }
+  return merged;
+}
+
 function buildOpenImageForEditScript(openIndex = 1) {
   return `((requestedIndex) => {
     const clean = (value) => String(value ?? '')
@@ -107,15 +121,28 @@ function buildOpenImageForEditScript(openIndex = 1) {
     let availableCount = 0;
 
     if (currentPath.startsWith('/images')) {
+      const mergeCandidates = function mergeChatGPTImageEditCandidates(preferredItems, fallbackItems) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [
+    ...(Array.isArray(preferredItems) ? preferredItems : []),
+    ...(Array.isArray(fallbackItems) ? fallbackItems : []),
+  ]) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    merged.push(item);
+  }
+  return merged;
+};
       const myImagesSection = findSectionByHeading(['我的图片', 'My images']);
       const preferredButtons = Array.from((myImagesSection || document).querySelectorAll('button, [role="button"], a'))
         .filter((node) => isVisible(node) && isOpenImageButton(node));
       const fallbackButtons = Array.from(document.querySelectorAll('button, [role="button"], a'))
         .filter((node) => isVisible(node) && isOpenImageButton(node));
-      const candidates = preferredButtons.length > 0 ? preferredButtons : fallbackButtons;
+      const candidates = mergeCandidates(preferredButtons, fallbackButtons);
       availableCount = candidates.length;
       button = candidates[index - 1] || null;
-      source = preferredButtons.length > 0 ? 'images-my-images' : 'images-page';
+      source = preferredButtons.length > 0 ? 'images-my-images-first' : 'images-page';
     } else if (currentPath.startsWith('/c/')) {
       const candidates = collectConversationImageTriggers();
       availableCount = candidates.length;
