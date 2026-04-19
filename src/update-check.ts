@@ -12,8 +12,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { styleText } from 'node:util';
 import { PKG_VERSION } from './version.js';
+
+const THIS_FILE = fileURLToPath(import.meta.url);
 
 const CACHE_DIR = path.join(os.homedir(), '.opencli');
 const CACHE_FILE = path.join(CACHE_DIR, 'update-check.json');
@@ -60,6 +63,10 @@ function isCI(): boolean {
   return !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION);
 }
 
+function isLinkedOrDevInstall(): boolean {
+  return !THIS_FILE.includes(`${path.sep}node_modules${path.sep}`);
+}
+
 /**
  * Register a process exit hook that prints an update notice if a newer
  * version was found on the last background check.
@@ -68,6 +75,7 @@ function isCI(): boolean {
  */
 export function registerUpdateNoticeOnExit(): void {
   if (isCI()) return;
+  if (isLinkedOrDevInstall()) return;
   if (process.argv.includes('--get-completions')) return;
 
   process.on('exit', (code) => {
@@ -91,6 +99,7 @@ export function registerUpdateNoticeOnExit(): void {
  */
 export function checkForUpdateBackground(): void {
   if (isCI()) return;
+  if (isLinkedOrDevInstall()) return;
   if (_cache && Date.now() - _cache.lastCheck < CHECK_INTERVAL_MS) return;
 
   void (async () => {
