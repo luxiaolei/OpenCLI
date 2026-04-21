@@ -5,6 +5,7 @@ import { withTimeoutMs } from './runtime.js';
 import { __test__ as cdpTest } from './browser/cdp.js';
 import { classifyBrowserError } from './browser/errors.js';
 import * as daemonClient from './browser/daemon-client.js';
+import { PKG_VERSION } from './version.js';
 
 describe('browser helpers', () => {
   it('extracts tab entries from string snapshots', () => {

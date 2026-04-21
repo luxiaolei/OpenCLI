@@ -56,6 +56,16 @@ export class Page extends BasePage {
     };
   }
 
+  private _markUnsupportedNetworkCapture(): void {
+    this._networkCaptureUnsupported = true;
+    if (this._networkCaptureWarned) return;
+    this._networkCaptureWarned = true;
+    log.warn(
+      'Browser Bridge extension does not support network capture; continuing without it. ' +
+      'Explore output may miss API endpoints until you reload or reinstall the extension.',
+    );
+  }
+
   async goto(url: string, options?: { waitUntil?: 'load' | 'none'; settleMs?: number }): Promise<void> {
     const result = await sendCommandFull('navigate', {
       url,
@@ -112,15 +122,6 @@ export class Page extends BasePage {
   setActivePage(page?: string): void {
     this._page = page;
     this._lastUrl = null;
-  }
-  private _markUnsupportedNetworkCapture(): void {
-    this._networkCaptureUnsupported = true;
-    if (this._networkCaptureWarned) return;
-    this._networkCaptureWarned = true;
-    log.warn(
-      'Browser Bridge extension does not support network capture; continuing without it. ' +
-      'Explore output may miss API endpoints until you reload or reinstall the extension.',
-    );
   }
 
   async evaluate(js: string): Promise<unknown> {

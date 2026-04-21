@@ -3234,6 +3234,78 @@
   },
   {
     "site": "chatgpt",
+    "name": "deep-research",
+    "description": "Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Prompt to send into ChatGPT Deep Research"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to wait for retry-required before falling back to submitted/pending (default: 30)"
+      }
+    ],
+    "columns": [
+      "ui_state",
+      "conversation_url",
+      "conversation_id",
+      "thread_title",
+      "mode_label"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/deep-research.js",
+    "sourceFile": "chatgpt/deep-research.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "deep-research-status",
+    "description": "Classify the visible UI state of a ChatGPT Deep Research thread",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Conversation URL, title query, or empty for latest/current"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode: contains or exact"
+      }
+    ],
+    "columns": [
+      "ui_state",
+      "conversation_url",
+      "conversation_id",
+      "thread_title",
+      "mode_label"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/deep-research-status.js",
+    "sourceFile": "chatgpt/deep-research-status.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "image",
     "description": "Generate images with ChatGPT web and save them locally",
     "domain": "chatgpt.com",
@@ -3250,7 +3322,7 @@
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/jakevin/Pictures/chatgpt",
+        "default": "/Users/xlmini/Pictures/chatgpt",
         "required": false,
         "help": "Output directory"
       },
@@ -3271,6 +3343,108 @@
     "type": "js",
     "modulePath": "chatgpt/image.js",
     "sourceFile": "chatgpt/image.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "image-capabilities",
+    "description": "Inspect the currently visible ChatGPT Images capabilities for the logged-in browser session",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "Category",
+      "Name",
+      "Value"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-capabilities.js",
+    "sourceFile": "chatgpt/image-capabilities.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "image-create",
+    "description": "Create an image from the ChatGPT /images workbench and return a conservative submission/result state",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Prompt to send into the ChatGPT /images workbench"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to wait for a visible result signal before falling back to submitted (default: 30)"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "page_url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-create.js",
+    "sourceFile": "chatgpt/image-create.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "image-edit",
+    "description": "Open a target ChatGPT image from /images or a specific conversation URL and submit a conservative edit prompt",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Edit prompt to send for the selected ChatGPT image"
+      },
+      {
+        "name": "url",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT conversation URL to target a specific image-edit thread"
+      },
+      {
+        "name": "image",
+        "type": "str",
+        "default": "1",
+        "required": false,
+        "help": "1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to wait for a visible edited result signal before falling back to submitted (default: 30)"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "page_url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-edit.js",
+    "sourceFile": "chatgpt/image-edit.js",
     "navigateBefore": false
   },
   {
@@ -6823,19 +6997,19 @@
         "type": "str",
         "default": "1:1",
         "required": false,
-        "help": "Ratio shorthand for aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3)"
+        "help": "Prompt-level ratio shorthand (not a native Gemini UI control): 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3"
       },
       {
         "name": "st",
         "type": "str",
         "default": "",
         "required": false,
-        "help": "Style shorthand, e.g. anime, icon, watercolor"
+        "help": "Prompt-level style shorthand, e.g. anime, icon, watercolor (not a native Gemini template selector)"
       },
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/jakevin/tmp/gemini-images",
+        "default": "/Users/xlmini/tmp/gemini-images",
         "required": false,
         "help": "Output directory shorthand"
       },
@@ -6856,6 +7030,31 @@
     "type": "js",
     "modulePath": "gemini/image.js",
     "sourceFile": "gemini/image.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gemini",
+    "name": "image-capabilities",
+    "description": "Inspect visible Gemini Create image capabilities without generating images",
+    "domain": "gemini.google.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "status",
+      "page_title",
+      "create_image_entry_visible",
+      "create_image_mode_active",
+      "template_cards",
+      "upload_affordances",
+      "tool_buttons",
+      "mode_buttons",
+      "page_url"
+    ],
+    "timeout": 90,
+    "type": "js",
+    "modulePath": "gemini/image-capabilities.js",
+    "sourceFile": "gemini/image-capabilities.js",
     "navigateBefore": false
   },
   {
@@ -8116,7 +8315,7 @@
       {
         "name": "path",
         "type": "str",
-        "default": "/Users/jakevin/Downloads/Instagram",
+        "default": "/Users/xlmini/Downloads/Instagram",
         "required": false,
         "help": "Download directory"
       }

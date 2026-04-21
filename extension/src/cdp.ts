@@ -401,7 +401,7 @@ function getOrCreateNetworkCaptureEntry(tabId: number, requestId: string, fallba
 export async function startNetworkCapture(
   tabId: number,
   pattern?: string,
-): Promise<void> {
+): Promise<boolean> {
   await ensureAttached(tabId);
   await chrome.debugger.sendCommand({ tabId }, 'Network.enable');
   networkCaptures.set(tabId, {
@@ -409,6 +409,7 @@ export async function startNetworkCapture(
     entries: [],
     requestToIndex: new Map(),
   });
+  return true;
 }
 
 export async function readNetworkCapture(tabId: number): Promise<NetworkCaptureEntry[]> {
