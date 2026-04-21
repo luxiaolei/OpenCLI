@@ -97,11 +97,20 @@ function buildOpenImageForEditScript(openIndex = 1) {
     const collectConversationImageTriggers = () => {
       const seen = new Set();
       const items = [];
+      const isConversationImageControl = (node) => {
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('已生成图片')
+          || label.includes('generated image')
+          || label.includes('打开图片')
+          || label.includes('open image')
+          || label.includes('编辑图片')
+          || label.includes('edit image');
+      };
       const push = (node) => {
         if (!(node instanceof HTMLElement)) return;
         if (seen.has(node)) return;
         if (!isVisible(node)) return;
-        if (!node.querySelector('img')) return;
+        if (!node.querySelector('img') && !isConversationImageControl(node)) return;
         seen.add(node);
         items.push(node);
       };
@@ -109,7 +118,7 @@ function buildOpenImageForEditScript(openIndex = 1) {
       Array.from(document.querySelectorAll('[id^="image-"] [role="button"], [id^="image-"] button, [id^="image-"] [tabindex="0"]')).forEach(push);
       Array.from(document.querySelectorAll('section [role="button"], section button, main [role="button"], main button')).forEach((node) => {
         if (!(node instanceof HTMLElement)) return;
-        if (!node.querySelector('img')) return;
+        if (!isConversationImageControl(node) && !node.querySelector('img')) return;
         if (!(node.closest('[id^="image-"]') || node.closest('[data-testid^="conversation-turn-"]'))) return;
         push(node);
       });
@@ -310,6 +319,7 @@ function buildImageEditStateScript() {
         const normalized = lower(label);
         return normalized.includes('打开图片') || normalized.includes('open image')
           || normalized.includes('编辑图片') || normalized.includes('edit image')
+          || normalized === '编辑' || normalized === 'edit'
           || normalized.includes('分享此图片') || normalized.includes('share this image');
       }));
 
@@ -356,6 +366,47 @@ function buildImageEditStateScript() {
       lightboxThumbnailLabels,
       isImagesPage: currentPath.startsWith('/images'),
       isConversationPage: currentPath.startsWith('/c/'),
+    };
+  })()`;
+}
+
+function buildOpenImageEditComposerScript() {
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const lower = (value) => clean(value).toLowerCase();
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label')].filter(Boolean).join(' '));
+    const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
+
+    const modalRoot = queryVisible(document, '[data-testid="modal-lightbox-new"]') || queryVisible(document, '[role="dialog"]');
+    const searchRoot = modalRoot || document;
+    const editButton = Array.from(searchRoot.querySelectorAll('button, [role="button"], a')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(combinedLabel(node));
+      return label.includes('编辑图片') || label.includes('edit image') || label === '编辑' || label === 'edit';
+    }) || null;
+
+    if (!(editButton instanceof HTMLElement)) {
+      return { ok: false, reason: 'ChatGPT image edit action was not found.' };
+    }
+
+    editButton.click();
+    return {
+      ok: true,
+      label: combinedLabel(editButton),
+      scope: modalRoot ? 'modal' : 'page',
     };
   })()`;
 }
@@ -494,7 +545,7 @@ function normalizeChatGPTImageResultAction(value) {
   const raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return '';
   if (raw.includes('打开图片') || raw.includes('open image')) return 'open';
-  if (raw.includes('编辑图片') || raw.includes('edit image')) return 'edit';
+  if (raw.includes('编辑图片') || raw.includes('edit image') || raw === '编辑' || raw === 'edit') return 'edit';
   if (raw.includes('分享此图片') || raw.includes('share this image')) return 'share';
   return '';
 }
@@ -605,6 +656,14 @@ export async function selectChatGPTImageInLightbox(page, imageIndex = 1) {
   return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown lightbox selection result.' };
 }
 
+export async function openChatGPTImageEditComposer(page) {
+  const result = await page.evaluate(buildOpenImageEditComposerScript()).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown edit-action result.' };
+}
+
 async function recoverChatGPTImageEditState(page, detail = '') {
   try {
     await openChatGPTImages(page);
@@ -708,6 +767,7 @@ export async function waitForChatGPTImageEditState(page, timeoutSeconds = 30, ba
 export const imageEditInternals = {
   buildChatGPTImageEditRow,
   openChatGPTImageForEdit,
+  openChatGPTImageEditComposer,
   readChatGPTImageEditState,
   waitForChatGPTImageOpenTarget,
   selectChatGPTImageInLightbox,
@@ -794,13 +854,6 @@ export const imageEditCommand = cli({
     }
 
     let readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
-    if (!hasChatGPTImageEditComposer(readySnapshot)) {
-      return [imageEditInternals.buildChatGPTImageEditRow(readySnapshot, {
-        status: 'blocked',
-        reason: 'edit-modal-unavailable',
-        detail: readySnapshot.detail || 'ChatGPT image edit modal was not ready.',
-      })];
-    }
 
     if (targetUrl) {
       const selectResult = await imageEditInternals.selectChatGPTImageInLightbox(page, imageIndex);
@@ -811,14 +864,23 @@ export const imageEditCommand = cli({
           detail: selectResult?.reason || 'Requested image index is unavailable.',
         })];
       }
-      readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
+
       if (!hasChatGPTImageEditComposer(readySnapshot)) {
-        return [imageEditInternals.buildChatGPTImageEditRow(readySnapshot, {
-          status: 'blocked',
-          reason: 'edit-modal-unavailable',
-          detail: readySnapshot.detail || 'ChatGPT image edit modal was not ready after selecting the target image.',
-        })];
+        const openComposerResult = await imageEditInternals.openChatGPTImageEditComposer(page);
+        if (openComposerResult?.ok) {
+          readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
+        }
       }
+    }
+
+    if (!hasChatGPTImageEditComposer(readySnapshot)) {
+      return [imageEditInternals.buildChatGPTImageEditRow(readySnapshot, {
+        status: 'blocked',
+        reason: 'edit-modal-unavailable',
+        detail: readySnapshot.detail || (targetUrl
+          ? 'ChatGPT image edit modal was not ready after opening the thread image.'
+          : 'ChatGPT image edit modal was not ready.'),
+      })];
     }
 
     const sendResult = await imageEditInternals.sendChatGPTImageEditPrompt(page, prompt);

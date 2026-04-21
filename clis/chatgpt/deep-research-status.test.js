@@ -21,7 +21,7 @@ const {
     conversation_id: snapshot.conversationId || '',
     thread_title: snapshot.threadTitle || '',
     mode_label: snapshot.modeLabel || '',
-    ...(extra.detail ? { detail: extra.detail } : {}),
+    ...((extra.detail || snapshot.isSignedIn === false) ? { detail: extra.detail || 'Not signed in to ChatGPT.' } : {}),
   })),
   mockGetConversationList: vi.fn(),
   mockOpenConversation: vi.fn(),
@@ -130,6 +130,51 @@ describe('chatgpt/deep-research-status', () => {
       thread_title: '',
       mode_label: '深度研究',
       detail: 'No conversation matched: missing',
+    }]);
+  });
+
+  it('returns a signed-out row from the landing page before resolving conversations', async () => {
+    mockReadSnapshot.mockResolvedValueOnce({
+      url: 'https://auth.openai.com/log-in-or-create-account',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '',
+      uiState: 'unknown',
+      isSignedIn: false,
+    });
+
+    const result = await deepResearchStatusCommand.func(page, { query: '', match: 'contains' });
+
+    expect(mockGetConversationList).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      ui_state: 'unknown',
+      conversation_url: 'https://auth.openai.com/log-in-or-create-account',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '',
+      detail: 'Not signed in to ChatGPT.',
+    }]);
+  });
+
+  it('treats an empty query as the current Deep Research landing state instead of the first sidebar conversation', async () => {
+    mockReadSnapshot.mockResolvedValueOnce({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究 应用站点',
+      uiState: 'landing',
+    });
+
+    const result = await deepResearchStatusCommand.func(page, { query: '', match: 'contains' });
+
+    expect(mockGetConversationList).not.toHaveBeenCalled();
+    expect(mockOpenConversation).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      ui_state: 'landing',
+      conversation_url: 'https://chatgpt.com/deep-research',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '深度研究 应用站点',
     }]);
   });
 });

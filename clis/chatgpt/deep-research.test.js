@@ -19,7 +19,7 @@ const {
     conversation_id: snapshot.conversationId || '',
     thread_title: snapshot.threadTitle || '',
     mode_label: snapshot.modeLabel || '',
-    ...(extra.detail ? { detail: extra.detail } : {}),
+    ...((extra.detail || snapshot.isSignedIn === false) ? { detail: extra.detail || 'Not signed in to ChatGPT.' } : {}),
   })),
   mockOpenDeepResearch: vi.fn(),
   mockParsePositiveInt: vi.fn((value, fallback) => {
@@ -121,6 +121,30 @@ describe('chatgpt/deep-research', () => {
       thread_title: '',
       mode_label: '深度研究',
       detail: 'ChatGPT Deep Research composer was not found.',
+    }]);
+  });
+
+  it('returns a signed-out row before attempting prompt submission', async () => {
+    mockReadSnapshot.mockResolvedValueOnce({
+      url: 'https://auth.openai.com/log-in-or-create-account',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '',
+      uiState: 'unknown',
+      isSignedIn: false,
+    });
+
+    const result = await deepResearchCommand.func(page, { prompt: 'research this topic' });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(mockWaitForState).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      ui_state: 'unknown',
+      conversation_url: 'https://auth.openai.com/log-in-or-create-account',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '',
+      detail: 'Not signed in to ChatGPT.',
     }]);
   });
 });

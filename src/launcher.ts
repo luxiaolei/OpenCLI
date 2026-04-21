@@ -11,6 +11,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ElectronAppEntry } from './electron-apps.js';
 import { getElectronApp } from './electron-apps.js';
@@ -96,6 +97,15 @@ export function discoverAppPath(displayName: string): string | null {
     ], { encoding: 'utf-8', stdio: 'pipe', timeout: 5_000 });
     return result.trim().replace(/\/$/, '');
   } catch {
+    const candidates = [
+      `/Applications/${displayName}.app`,
+      path.join(process.env.HOME ?? '', 'Applications', `${displayName}.app`),
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate.replace(/\/$/, '');
+      }
+    }
     return null;
   }
 }

@@ -113,7 +113,11 @@ function buildSnapshotScript() {
       return hasMode && hasRetry;
     });
 
-    const modeNode = findActionNode((label) => label === 'deep research' || label === '深度研究');
+    const modeNode = findActionNode((label) => {
+      const hasMode = label.includes('deep research') || label.includes('深度研究');
+      const hasRetry = label.includes('click to retry') || label.includes('点击以重试');
+      return hasMode && !hasRetry;
+    });
     const shareNode = findActionNode((label) => label.includes('share') || label.includes('分享'));
     const loginNode = Array.from(document.querySelectorAll('a, button')).find((node) => {
       if (!isVisible(node)) return false;
@@ -123,6 +127,19 @@ function buildSnapshotScript() {
 
     const currentUrl = window.location.href;
     const currentPath = window.location.pathname || '';
+    const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
+    const mainText = clean([
+      textOf(mainRoot),
+      clean(document.body ? (document.body.innerText || document.body.textContent || '') : ''),
+    ].filter(Boolean).join(' '));
+    const lowerMainText = mainText.toLowerCase();
+    const lowerDocumentHtml = String(document.body ? (document.body.innerHTML || '') : '').toLowerCase();
+    const hasDeepResearchText = lowerMainText.includes('deep research')
+      || lowerMainText.includes('深度研究')
+      || lowerDocumentHtml.includes('deep research')
+      || lowerDocumentHtml.includes('深度研究');
+    const hasSitesText = /应用\\s*站点|apply\\s*sites/i.test(mainText)
+      || /应用\\s*站点|apply\\s*sites/i.test(String(document.body ? (document.body.innerHTML || '') : ''));
     const toAbsoluteUrl = (href) => {
       try {
         return new URL(href, window.location.origin).href;
@@ -148,9 +165,14 @@ function buildSnapshotScript() {
     }
 
     const currentConversation = conversationLinks.find((item) => item.url === currentUrl || item.href === currentPath || item.ariaCurrent === 'page') || null;
-    const conversationMatch = currentPath.match(/^\/c\/([^/?#]+)/);
-    const documentTitle = clean(document.title || '').replace(/\s*[-|·].*$/, '').trim();
-    const modeLabel = clean(modeNode ? combinedLabel(modeNode) : (retryNode ? combinedLabel(retryNode) : '')).replace(/[，,].*$/, '').trim();
+    const conversationMatch = currentPath.match(/^\\/c\\/([^/?#]+)/);
+    const documentTitle = clean(document.title || '').replace(/\\s*[-|·].*$/, '').trim();
+    const inferredModeLabel = modeNode
+      ? combinedLabel(modeNode)
+      : (retryNode
+        ? combinedLabel(retryNode)
+        : (hasDeepResearchText && hasSitesText ? (mainText.includes('深度研究') ? '深度研究' : 'Deep Research') : ''));
+    const modeLabel = clean(inferredModeLabel).replace(/[，,].*$/, '').trim();
 
     return {
       url: currentUrl,
@@ -334,6 +356,95 @@ function buildConversationListScript() {
   })()`;
 }
 
+function buildChatGPTDeepResearchFallbackScript() {
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label')].filter(Boolean).join(' '));
+    const matchVisibleNode = (predicate) => Array.from(document.querySelectorAll('button, [role="button"], a, span, div'))
+      .find((node) => isVisible(node) && predicate(combinedLabel(node).toLowerCase())) || null;
+
+    const retryNode = matchVisibleNode((label) => {
+      const hasMode = label.includes('deep research') || label.includes('深度研究');
+      const hasRetry = label.includes('click to retry') || label.includes('点击以重试');
+      return hasMode && hasRetry;
+    });
+    const modeNode = matchVisibleNode((label) => {
+      const hasMode = label.includes('deep research') || label.includes('深度研究');
+      const hasRetry = label.includes('click to retry') || label.includes('点击以重试');
+      return hasMode && !hasRetry;
+    });
+    const shareNode = matchVisibleNode((label) => label.includes('share') || label.includes('分享'));
+    const sendNode = matchVisibleNode((label) => label.includes('send prompt') || label.includes('发送提示'));
+    const loginNode = Array.from(document.querySelectorAll('a, button')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = combinedLabel(node).toLowerCase();
+      return label.includes('log in') || label.includes('sign in') || label.includes('登录') || label.includes('免费注册') || label.includes('sign up');
+    }) || null;
+
+    const currentUrl = window.location.href;
+    const currentPath = window.location.pathname || '';
+    const mainRoot = Array.from(document.querySelectorAll('main, [role="main"]')).find((node) => isVisible(node)) || document.body;
+    const mainText = clean([
+      textOf(mainRoot),
+      clean(document.body ? (document.body.innerText || document.body.textContent || '') : ''),
+    ].filter(Boolean).join(' '));
+    const lowerMainText = mainText.toLowerCase();
+    const lowerDocumentHtml = String(document.body ? (document.body.innerHTML || '') : '').toLowerCase();
+    const hasDeepResearchText = lowerMainText.includes('deep research')
+      || lowerMainText.includes('深度研究')
+      || lowerDocumentHtml.includes('deep research')
+      || lowerDocumentHtml.includes('深度研究');
+    const hasSitesText = /应用\\s*站点|apply\\s*sites/i.test(mainText)
+      || /应用\\s*站点|apply\\s*sites/i.test(String(document.body ? (document.body.innerHTML || '') : ''));
+    const conversationMatch = currentPath.match(/^\\/c\\/([^/?#]+)/);
+    const documentTitle = clean(document.title || '').replace(/\\s*[-|·].*$/, '').trim();
+    const inferredModeLabel = modeNode
+      ? combinedLabel(modeNode)
+      : (retryNode
+        ? combinedLabel(retryNode)
+        : (hasDeepResearchText && hasSitesText ? (mainText.includes('深度研究') ? '深度研究' : 'Deep Research') : ''));
+
+    return {
+      url: currentUrl,
+      pathname: currentPath,
+      conversationId: conversationMatch ? conversationMatch[1] : '',
+      threadTitle: conversationMatch ? documentTitle : '',
+      modeLabel: clean(inferredModeLabel).replace(/[，,].*$/, '').trim(),
+      retryLabel: clean(retryNode ? combinedLabel(retryNode) : ''),
+      shareVisible: Boolean(shareNode),
+      sendLabel: clean(sendNode ? combinedLabel(sendNode) : ''),
+      sendEnabled: Boolean(sendNode),
+      isDeepResearchPage: currentPath === '/deep-research',
+      isSignedIn: loginNode ? false : null,
+    };
+  })()`;
+}
+
+function hasMeaningfulChatGPTDeepResearchSignal(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  if (snapshot.isSignedIn === false) return true;
+  if (snapshot.isDeepResearchPage) return true;
+  if (String(snapshot.modeLabel ?? '').trim()) return true;
+  if (String(snapshot.retryLabel ?? '').trim()) return true;
+  if (String(snapshot.sendLabel ?? '').trim()) return true;
+  if (Boolean(snapshot.composerHasText)) return true;
+  return false;
+}
+
 export function parseChatGPTPositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -368,6 +479,19 @@ export function extractChatGPTConversationId(value) {
   if (!parsedUrl) return '';
   const parsedMatch = parsedUrl.match(/\/c\/([^/?#]+)/);
   return parsedMatch ? parsedMatch[1] : '';
+}
+
+function isChatGPTAuthUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    if (url.hostname === 'auth.openai.com') return true;
+    return (url.hostname === CHATGPT_WEB_DOMAIN || url.hostname.endsWith(`.${CHATGPT_WEB_DOMAIN}`))
+      && url.pathname.startsWith('/auth/');
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeChatGPTTitle(value) {
@@ -431,6 +555,9 @@ export function normalizeChatGPTDeepResearchSnapshot(snapshot) {
   const url = String(snapshot?.url ?? '').trim();
   const conversationId = String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(url);
   const explicitUiState = normalizeChatGPTDeepResearchUiState(snapshot?.uiState ?? '');
+  const inferredSignedIn = typeof snapshot?.isSignedIn === 'boolean'
+    ? snapshot.isSignedIn
+    : (isChatGPTAuthUrl(url) ? false : null);
   const normalized = {
     url,
     pathname: String(snapshot?.pathname ?? '').trim(),
@@ -445,7 +572,7 @@ export function normalizeChatGPTDeepResearchSnapshot(snapshot) {
     composerText: String(snapshot?.composerText ?? '').trim(),
     composerPlaceholder: String(snapshot?.composerPlaceholder ?? '').trim(),
     isDeepResearchPage: Boolean(snapshot?.isDeepResearchPage),
-    isSignedIn: typeof snapshot?.isSignedIn === 'boolean' ? snapshot.isSignedIn : null,
+    isSignedIn: inferredSignedIn,
   };
   normalized.uiState = explicitUiState || classifyChatGPTDeepResearchSnapshot(normalized);
   return normalized;
@@ -460,7 +587,8 @@ export function buildChatGPTDeepResearchRow(snapshot, extra = {}) {
     thread_title: normalized.threadTitle,
     mode_label: normalized.modeLabel,
   };
-  if (extra.detail) row.detail = String(extra.detail);
+  const detail = extra.detail || (normalized.isSignedIn === false ? 'Not signed in to ChatGPT.' : '');
+  if (detail) row.detail = String(detail);
   return row;
 }
 
@@ -470,19 +598,36 @@ export async function getCurrentChatGPTUrl(page) {
 
 export async function openChatGPTDeepResearch(page) {
   await page.goto(CHATGPT_DEEP_RESEARCH_URL, { waitUntil: 'load', settleMs: 2500 });
-  await page.wait(1);
+  await page.wait({ time: 1 });
 }
 
 export async function openChatGPTConversation(page, url) {
   await page.goto(url, { waitUntil: 'load', settleMs: 2500 });
-  await page.wait(1);
+  await page.wait({ time: 1 });
 }
 
 export async function readChatGPTDeepResearchSnapshot(page) {
-  const snapshot = await page.evaluate(buildSnapshotScript()).catch(async () => ({
+  let latestSnapshot = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const snapshot = await page.evaluate(buildSnapshotScript()).catch(() => null);
+    if (snapshot) {
+      latestSnapshot = snapshot;
+      if (hasMeaningfulChatGPTDeepResearchSignal(snapshot)) {
+        return normalizeChatGPTDeepResearchSnapshot(snapshot);
+      }
+    }
+    if (attempt < 2) {
+      await page.wait({ time: 1 }).catch(() => undefined);
+    }
+  }
+
+  const fallbackSnapshot = await page.evaluate(buildChatGPTDeepResearchFallbackScript()).catch(async () => ({
     url: await getCurrentChatGPTUrl(page),
   }));
-  return normalizeChatGPTDeepResearchSnapshot(snapshot);
+  return normalizeChatGPTDeepResearchSnapshot({
+    ...(latestSnapshot && typeof latestSnapshot === 'object' ? latestSnapshot : {}),
+    ...(fallbackSnapshot && typeof fallbackSnapshot === 'object' ? fallbackSnapshot : {}),
+  });
 }
 
 export async function sendChatGPTDeepResearchPrompt(page, prompt) {
@@ -502,7 +647,7 @@ export async function waitForChatGPTDeepResearchState(page, timeoutSeconds = 30)
     return lastSnapshot;
   }
   for (let attempt = 0; attempt < timeout; attempt += 1) {
-    await page.wait(1);
+    await page.wait({ time: 1 });
     lastSnapshot = await readChatGPTDeepResearchSnapshot(page);
     if (lastSnapshot.uiState === 'retry_required') {
       return lastSnapshot;
@@ -615,9 +760,13 @@ function buildImageCapabilitiesScript() {
 
 export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
   const asArray = (value) => Array.isArray(value) ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean))) : [];
+  const url = String(snapshot?.url ?? '').trim();
+  const inferredSignedIn = typeof snapshot?.isSignedIn === 'boolean'
+    ? snapshot.isSignedIn
+    : (isChatGPTAuthUrl(url) ? false : null);
   return {
     detail: String(snapshot?.detail ?? '').trim(),
-    url: String(snapshot?.url ?? '').trim(),
+    url,
     pathname: String(snapshot?.pathname ?? '').trim(),
     title: String(snapshot?.title ?? '').trim(),
     accountTier: String(snapshot?.accountTier ?? '').trim(),
@@ -631,6 +780,7 @@ export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
     taskCards: asArray(snapshot?.taskCards),
     resultActions: asArray(snapshot?.resultActions),
     isImagesPage: Boolean(snapshot?.isImagesPage),
+    isSignedIn: inferredSignedIn,
   };
 }
 
@@ -647,6 +797,12 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
   push('page', 'url', normalized.url);
   push('page', 'title', normalized.title);
   push('debug', 'detail', normalized.detail);
+
+  if (normalized.isSignedIn === false) {
+    push('state', 'status', 'blocked');
+    push('state', 'reason', 'not-signed-in');
+    return rows;
+  }
 
   if (!normalized.isImagesPage) {
     push('state', 'status', 'absent');
@@ -683,7 +839,7 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
 
 export async function openChatGPTImages(page) {
   await page.goto(CHATGPT_IMAGES_URL, { waitUntil: 'load', settleMs: 2500 });
-  await page.wait(1);
+  await page.wait({ time: 1 });
 }
 
 export async function readChatGPTImageCapabilities(page) {

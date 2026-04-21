@@ -238,6 +238,55 @@ describe('chatgpt/image-edit', () => {
       detail: 'Requested image index is not available in this ChatGPT image lightbox.',
     }]);
   });
+
+  it('clicks the visible thread-level edit action when the lightbox opens before the composer', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, source: 'conversation-thread' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal')
+      .mockResolvedValueOnce({
+        pageUrl: 'https://chatgpt.com/c/thread123',
+        pageTitle: 'ChatGPT',
+        accountTier: 'Pro',
+        modalVisible: true,
+        editComposerVisible: false,
+        resultActionLabels: ['编辑'],
+      })
+      .mockResolvedValueOnce({
+        pageUrl: 'https://chatgpt.com/c/thread123',
+        pageTitle: 'ChatGPT',
+        accountTier: 'Pro',
+        modalVisible: true,
+        editComposerVisible: true,
+        editPromptPlaceholder: '描述编辑',
+      });
+    vi.spyOn(imageEditInternals, 'openChatGPTImageEditComposer').mockResolvedValue({ ok: true, label: '编辑' });
+    vi.spyOn(imageEditInternals, 'selectChatGPTImageInLightbox').mockResolvedValue({ ok: true, selectedIndex: 1, mode: 'default' });
+    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
+      status: 'submitted',
+      pageUrl: 'https://chatgpt.com/c/edit123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      conversationId: 'edit123',
+      loadingHeadlines: ['正在创建图片'],
+      resultActions: [],
+      resultActionLabels: [],
+    });
+
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      url: 'https://chatgpt.com/c/thread123',
+    });
+
+    expect(imageEditInternals.openChatGPTImageEditComposer).toHaveBeenCalledWith(page);
+    expect(result).toEqual([{
+      action: 'edit',
+      status: 'submitted',
+      page_url: 'https://chatgpt.com/c/edit123',
+      page_title: 'ChatGPT',
+      account_tier: 'Pro',
+      conversation_id: 'edit123',
+    }]);
+  });
 });
 
 describe('chatgpt/image-edit helpers', () => {
@@ -275,6 +324,27 @@ describe('chatgpt/image-edit helpers', () => {
       page_title: 'ChatGPT',
       account_tier: 'Pro',
       conversation_id: 'edit789',
+    });
+  });
+
+  it('accepts thread image controls that expose generated-image aria labels without img tags', async () => {
+    const page = {
+      evaluate: vi.fn().mockResolvedValue({
+        ok: true,
+        openLabel: '已生成图片：蓝色陶瓷杯产品照',
+        modalVisible: false,
+        requestedIndex: 1,
+        availableCount: 1,
+        source: 'conversation-thread',
+      }),
+    };
+
+    const result = await imageEditInternals.openChatGPTImageForEdit(page, 1);
+
+    expect(result).toMatchObject({
+      ok: true,
+      source: 'conversation-thread',
+      requestedIndex: 1,
     });
   });
 

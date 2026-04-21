@@ -47,4 +47,25 @@ describe('chatgpt/image-capabilities', () => {
     });
     expect(result).toEqual([{ Category: 'page', Name: 'url', Value: 'https://chatgpt.com/images/' }]);
   });
+
+  it('preserves blocked not-signed-in rows from the capability reader', async () => {
+    mockReadCapabilities.mockResolvedValue({
+      url: 'https://chatgpt.com/auth/login?next=%2Fimages%2F',
+      title: '开始使用 | ChatGPT',
+      isSignedIn: false,
+    });
+    mockBuildRows.mockReturnValueOnce([
+      { Category: 'page', Name: 'url', Value: 'https://chatgpt.com/auth/login?next=%2Fimages%2F' },
+      { Category: 'state', Name: 'status', Value: 'blocked' },
+      { Category: 'state', Name: 'reason', Value: 'not-signed-in' },
+    ]);
+
+    const result = await imageCapabilitiesCommand.func(page, {});
+
+    expect(result).toEqual([
+      { Category: 'page', Name: 'url', Value: 'https://chatgpt.com/auth/login?next=%2Fimages%2F' },
+      { Category: 'state', Name: 'status', Value: 'blocked' },
+      { Category: 'state', Name: 'reason', Value: 'not-signed-in' },
+    ]);
+  });
 });

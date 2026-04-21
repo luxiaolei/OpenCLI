@@ -41,6 +41,14 @@ export const deepResearchStatusCommand = cli({
     }
 
     await openChatGPTDeepResearch(page);
+    const landingSnapshot = await readChatGPTDeepResearchSnapshot(page);
+    if (landingSnapshot.isSignedIn === false) {
+      return [buildChatGPTDeepResearchRow(landingSnapshot)];
+    }
+    if (!query) {
+      return [buildChatGPTDeepResearchRow(landingSnapshot)];
+    }
+
     const conversations = await getChatGPTConversationList(page);
     const picked = resolveChatGPTConversationForQuery(conversations, query, match);
     if (picked?.Url) {
@@ -49,10 +57,6 @@ export const deepResearchStatusCommand = cli({
       return [buildChatGPTDeepResearchRow(snapshot)];
     }
 
-    const currentSnapshot = await readChatGPTDeepResearchSnapshot(page);
-    if (query) {
-      return [buildChatGPTDeepResearchRow(currentSnapshot, { detail: `No conversation matched: ${query}` })];
-    }
-    return [buildChatGPTDeepResearchRow(currentSnapshot)];
+    return [buildChatGPTDeepResearchRow(landingSnapshot, { detail: `No conversation matched: ${query}` })];
   },
 });

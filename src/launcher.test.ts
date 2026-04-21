@@ -31,7 +31,12 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+}));
+
 const cp = vi.mocked(await import('node:child_process'));
+const fsMod = vi.mocked(await import('node:fs'));
 
 describe('probeCDP', () => {
   it('returns false when CDP endpoint is unreachable', async () => {
@@ -73,10 +78,20 @@ describe('discoverAppPath', () => {
     expect(result).toBe('/Applications/Cursor.app');
   });
 
-  it.skipIf(process.platform !== 'darwin')('returns null when osascript fails', () => {
+  it.skipIf(process.platform !== 'darwin')('falls back to /Applications when osascript times out', () => {
+    cp.execFileSync.mockImplementation(() => {
+      throw new Error('app lookup timed out');
+    });
+    fsMod.existsSync.mockImplementation((candidate) => candidate === '/Applications/Codex.app');
+    const result = discoverAppPath('Codex');
+    expect(result).toBe('/Applications/Codex.app');
+  });
+
+  it.skipIf(process.platform !== 'darwin')('returns null when osascript fails and no standard app path exists', () => {
     cp.execFileSync.mockImplementation(() => {
       throw new Error('app not found');
     });
+    fsMod.existsSync.mockReturnValue(false);
     const result = discoverAppPath('NonExistent');
     expect(result).toBeNull();
   });

@@ -29,6 +29,9 @@ export const deepResearchCommand = cli({
     const timeout = parseChatGPTPositiveInt(kwargs.timeout, 30);
     await openChatGPTDeepResearch(page);
     const initialSnapshot = await readChatGPTDeepResearchSnapshot(page);
+    if (initialSnapshot.isSignedIn === false) {
+      return [buildChatGPTDeepResearchRow(initialSnapshot)];
+    }
     const sendResult = await sendChatGPTDeepResearchPrompt(page, prompt);
     if (!sendResult?.ok) {
       const snapshotAfterFailure = await readChatGPTDeepResearchSnapshot(page);

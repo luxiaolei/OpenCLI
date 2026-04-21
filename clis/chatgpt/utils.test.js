@@ -1,3 +1,4 @@
+import vm from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildChatGPTDeepResearchRow,
@@ -7,8 +8,12 @@ import {
   extractChatGPTConversationId,
   hasChatGPTImageContext,
   normalizeChatGPTImageCapabilitySnapshot,
+  openChatGPTConversation,
+  openChatGPTDeepResearch,
+  openChatGPTImages,
   parseChatGPTConversationUrl,
   parseChatGPTTitleMatchMode,
+  readChatGPTDeepResearchSnapshot,
   resolveChatGPTConversationForQuery,
   waitForChatGPTDeepResearchState,
 } from './utils.js';
@@ -73,6 +78,91 @@ describe('chatgpt/utils', () => {
       thread_title: 'ChatGPT Deep Research 概述',
       mode_label: '深度研究',
     });
+  });
+
+  it('uses fixed time-based waits after opening ChatGPT routes that hydrate after load', async () => {
+    const page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await openChatGPTDeepResearch(page);
+    await openChatGPTConversation(page, 'https://chatgpt.com/c/abc123');
+    await openChatGPTImages(page);
+
+    expect(page.goto).toHaveBeenNthCalledWith(1, 'https://chatgpt.com/deep-research', { waitUntil: 'load', settleMs: 2500 });
+    expect(page.goto).toHaveBeenNthCalledWith(2, 'https://chatgpt.com/c/abc123', { waitUntil: 'load', settleMs: 2500 });
+    expect(page.goto).toHaveBeenNthCalledWith(3, 'https://chatgpt.com/images', { waitUntil: 'load', settleMs: 2500 });
+    expect(page.wait).toHaveBeenNthCalledWith(1, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(2, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(3, { time: 1 });
+  });
+
+  it('infers auth state from ChatGPT login URLs and surfaces a stable detail', () => {
+    expect(buildChatGPTDeepResearchRow({
+      url: 'https://auth.openai.com/log-in-or-create-account',
+      threadTitle: '',
+      modeLabel: '',
+      retryLabel: '',
+    })).toEqual({
+      ui_state: 'unknown',
+      conversation_url: 'https://auth.openai.com/log-in-or-create-account',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '',
+      detail: 'Not signed in to ChatGPT.',
+    });
+  });
+
+  it('falls back to a lighter snapshot when the full deep-research probe stays blank', async () => {
+    const scriptedResults = [
+      {
+        url: 'https://chatgpt.com/c/abc123',
+        pathname: '/c/abc123',
+        conversationId: 'abc123',
+      },
+      {
+        url: 'https://chatgpt.com/c/abc123',
+        pathname: '/c/abc123',
+        conversationId: 'abc123',
+      },
+      {
+        url: 'https://chatgpt.com/c/abc123',
+        pathname: '/c/abc123',
+        conversationId: 'abc123',
+      },
+      {
+        url: 'https://chatgpt.com/c/abc123',
+        pathname: '/c/abc123',
+        conversationId: 'abc123',
+        threadTitle: 'OpenAI ChatGPT 研究要点',
+        modeLabel: '深度研究',
+        retryLabel: '深度研究，点击以重试',
+        shareVisible: true,
+      },
+    ];
+    const page = {
+      evaluate: vi.fn().mockImplementation((js) => {
+        new vm.Script(String(js));
+        return Promise.resolve(scriptedResults.shift() ?? 'https://chatgpt.com/c/abc123');
+      }),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await readChatGPTDeepResearchSnapshot(page);
+
+    expect(result).toMatchObject({
+      url: 'https://chatgpt.com/c/abc123',
+      conversationId: 'abc123',
+      threadTitle: 'OpenAI ChatGPT 研究要点',
+      modeLabel: '深度研究',
+      retryLabel: '深度研究，点击以重试',
+      uiState: 'retry_required',
+    });
+    expect(page.evaluate).toHaveBeenCalledTimes(4);
+    expect(page.wait).toHaveBeenCalledTimes(2);
+    expect(page.wait).toHaveBeenNthCalledWith(1, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(2, { time: 1 });
   });
 
   it('waits through pending to allow retry_required to win', async () => {
@@ -145,6 +235,21 @@ describe('chatgpt/utils', () => {
       { Category: 'page', Name: 'title', Value: 'ChatGPT' },
       { Category: 'state', Name: 'status', Value: 'absent' },
       { Category: 'state', Name: 'reason', Value: 'not-images-page' },
+    ]);
+  });
+
+  it('surfaces blocked not-signed-in for ChatGPT auth redirects', () => {
+    const snapshot = normalizeChatGPTImageCapabilitySnapshot({
+      url: 'https://chatgpt.com/auth/login?next=%2Fimages%2F',
+      title: '开始使用 | ChatGPT',
+      isImagesPage: false,
+    });
+    const rows = buildChatGPTImageCapabilityRows(snapshot);
+    expect(rows).toEqual([
+      { Category: 'page', Name: 'url', Value: 'https://chatgpt.com/auth/login?next=%2Fimages%2F' },
+      { Category: 'page', Name: 'title', Value: '开始使用 | ChatGPT' },
+      { Category: 'state', Name: 'status', Value: 'blocked' },
+      { Category: 'state', Name: 'reason', Value: 'not-signed-in' },
     ]);
   });
 

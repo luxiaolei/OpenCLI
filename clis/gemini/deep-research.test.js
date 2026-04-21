@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const { mockGetCurrentGeminiUrl, mockReadGeminiSnapshot, mockSelectGeminiTool, mockSendGeminiMessage, mockStartNewGeminiChat, mockWaitForGeminiSubmission, mockWaitForGeminiConfirmButton, mockGetLatestGeminiAssistantResponse, } = vi.hoisted(() => ({
+const { mockGetCurrentGeminiUrl, mockGetGeminiPageState, mockReadGeminiSnapshot, mockSelectGeminiTool, mockSendGeminiMessage, mockStartNewGeminiChat, mockWaitForGeminiSubmission, mockWaitForGeminiConfirmButton, mockGetLatestGeminiAssistantResponse, } = vi.hoisted(() => ({
     mockGetCurrentGeminiUrl: vi.fn(),
+    mockGetGeminiPageState: vi.fn(),
     mockReadGeminiSnapshot: vi.fn(),
     mockSelectGeminiTool: vi.fn(),
     mockSendGeminiMessage: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('./utils.js', () => ({
         return label ? [label] : fallback;
     },
     getCurrentGeminiUrl: mockGetCurrentGeminiUrl,
+    getGeminiPageState: mockGetGeminiPageState,
     getLatestGeminiAssistantResponse: mockGetLatestGeminiAssistantResponse,
     readGeminiSnapshot: mockReadGeminiSnapshot,
     selectGeminiTool: mockSelectGeminiTool,
@@ -51,6 +53,7 @@ describe('gemini/deep-research', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetCurrentGeminiUrl.mockResolvedValue('https://gemini.google.com/app/chat');
+        mockGetGeminiPageState.mockResolvedValue({ isSignedIn: true });
         mockReadGeminiSnapshot.mockResolvedValue({
             turns: [],
             transcriptLines: [],
@@ -78,6 +81,13 @@ describe('gemini/deep-research', () => {
         expect(mockWaitForGeminiSubmission).toHaveBeenCalledTimes(1);
         expect(mockWaitForGeminiConfirmButton).toHaveBeenCalledWith(page, expect.arrayContaining(['Start research', 'Start deep research', 'Generate research plan', '\u751f\u6210\u7814\u7a76\u8ba1\u5212']), 30);
         expect(result).toEqual([{ status: 'started', url: 'https://gemini.google.com/app/chat' }]);
+    });
+    it('returns not-signed-in before trying to select the tool', async () => {
+        mockGetGeminiPageState.mockResolvedValue({ isSignedIn: false });
+        const result = await deepResearchCommand.func(page, { prompt: 'research this topic' });
+        expect(mockSelectGeminiTool).not.toHaveBeenCalled();
+        expect(mockSendGeminiMessage).not.toHaveBeenCalled();
+        expect(result).toEqual([{ status: 'not-signed-in', url: 'https://gemini.google.com/app/chat' }]);
     });
     it('returns tool-not-found when the tool cannot be selected', async () => {
         mockSelectGeminiTool.mockResolvedValue('');
