@@ -65,7 +65,11 @@ export class CDPBridge implements IBrowserFactory {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(wsUrl);
       const timeoutMs = (opts?.timeout ?? 10) * 1000;
-      const timeout = setTimeout(() => reject(new Error('CDP connect timeout')), timeoutMs);
+      const timeout = setTimeout(() => {
+        this._ws = null;
+        ws.close();
+        reject(new Error('CDP connect timeout'));
+      }, timeoutMs);
 
       ws.on('open', async () => {
         clearTimeout(timeout);
@@ -73,7 +77,11 @@ export class CDPBridge implements IBrowserFactory {
         try {
           await this.send('Page.enable');
           await this.send('Page.addScriptToEvaluateOnNewDocument', { source: generateStealthJs() });
-        } catch {}
+        } catch (err) {
+          ws.close();
+          reject(err instanceof Error ? err : new Error(String(err)));
+          return;
+        }
         resolve(new CDPPage(this));
       });
 
@@ -232,7 +240,7 @@ class CDPPage extends BasePage {
     return base64;
   }
 
-  async startNetworkCapture(pattern: string = ''): Promise<void> {
+  async startNetworkCapture(pattern: string = ''): Promise<boolean> {
     // Always update the filter pattern
     this._networkCapturePattern = pattern;
 
@@ -290,6 +298,7 @@ class CDPPage extends BasePage {
 
       this._networkCapturing = true;
     }
+    return true;
   }
 
   async readNetworkCapture(): Promise<unknown[]> {
@@ -330,7 +339,7 @@ class CDPPage extends BasePage {
     return [];
   }
 
-  async selectTab(_index: number): Promise<void> {
+  async selectTab(_target: number | string): Promise<void> {
     // Not supported in direct CDP mode
   }
 }

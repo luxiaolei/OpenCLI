@@ -616,7 +616,9 @@ export function generateSnapshotJs(opts: DomSnapshotOptions = {}): string {
   const lines = [];
   const hiddenInteractives = [];
   const currentHashes = [];
+  const refIdentity = {};
   let iframeCount = 0;
+  let crossOriginIndex = 0;
 
   function walk(el, depth, parentPropagatingRect) {
     if (depth > MAX_DEPTH) return false;
@@ -750,11 +752,20 @@ export function generateSnapshotJs(opts: DomSnapshotOptions = {}): string {
     // Scroll marker
     if (isScrollable && !interactive) line += '|scroll|';
 
-    // Interactive index + data-ref
+    // Interactive index + data-ref + fingerprint
     if (interactive) {
       interactiveIndex++;
       if (ANNOTATE_REFS) el.setAttribute('data-opencli-ref', '' + interactiveIndex);
       line += isScrollable ? '|scroll[' + interactiveIndex + ']|' : '[' + interactiveIndex + ']';
+      // Store fingerprint for stale-ref detection
+      refIdentity['' + interactiveIndex] = {
+        tag: tag,
+        role: el.getAttribute('role') || '',
+        text: (el.textContent || '').trim().slice(0, 30),
+        ariaLabel: el.getAttribute('aria-label') || '',
+        id: el.id || '',
+        testId: el.getAttribute('data-testid') || el.getAttribute('data-test') || '',
+      };
     }
 
     // Tag + attributes
@@ -788,7 +799,9 @@ export function generateSnapshotJs(opts: DomSnapshotOptions = {}): string {
       const doc = el.contentDocument;
       if (!doc || !doc.body) {
         const attrs = serializeAttrs(el);
-        lines.push(indent + '|iframe|<iframe' + (attrs ? ' ' + attrs : '') + ' /> (cross-origin)');
+        const frameLabel = '[F' + crossOriginIndex + ']';
+        lines.push(indent + '|iframe|' + frameLabel + '<iframe' + (attrs ? ' ' + attrs : '') + ' /> (cross-origin, use: opencli browser frames + browser eval --frame <index>)');
+        crossOriginIndex++;
         return false;
       }
       iframeCount++;
@@ -801,7 +814,9 @@ export function generateSnapshotJs(opts: DomSnapshotOptions = {}): string {
       return has;
     } catch {
       const attrs = serializeAttrs(el);
-      lines.push(indent + '|iframe|<iframe' + (attrs ? ' ' + attrs : '') + ' /> (blocked)');
+      const frameLabel = '[F' + crossOriginIndex + ']';
+      lines.push(indent + '|iframe|' + frameLabel + '<iframe' + (attrs ? ' ' + attrs : '') + ' /> (blocked, use: opencli browser frames + browser eval --frame <index>)');
+      crossOriginIndex++;
       return false;
     }
   }
@@ -838,6 +853,8 @@ export function generateSnapshotJs(opts: DomSnapshotOptions = {}): string {
 
   // Store hashes on window for next diff snapshot
   try { window.__opencli_prev_hashes = JSON.stringify(currentHashes); } catch {}
+  // Store ref identity map for stale-ref detection by target resolver
+  try { window.__opencli_ref_identity = refIdentity; } catch {}
 
   return lines.join('\\n');
 })()

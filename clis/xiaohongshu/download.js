@@ -2,14 +2,14 @@
  * Xiaohongshu download — download images and videos from a note.
  *
  * Usage:
- *   opencli xiaohongshu download <note-id-or-url> --output ./xhs
+ *   opencli xiaohongshu download <signed-note-url-or-shortlink> --output ./xhs
  *
- * Accepts a bare note ID, a full xiaohongshu.com URL (with xsec_token),
- * or a short link (http://xhslink.com/...).
+ * Accepts a full xiaohongshu.com URL with xsec_token or an xhslink short link.
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { formatCookieHeader } from '@jackwener/opencli/download';
 import { downloadMedia } from '@jackwener/opencli/download/media-download';
+import { CliError } from '@jackwener/opencli/errors';
 import { buildNoteUrl, parseNoteId } from './note-helpers.js';
 cli({
     site: 'xiaohongshu',
@@ -17,8 +17,9 @@ cli({
     description: '下载小红书笔记中的图片和视频',
     domain: 'www.xiaohongshu.com',
     strategy: Strategy.COOKIE,
+    navigateBefore: false,
     args: [
-        { name: 'note-id', positional: true, required: true, help: 'Note ID, full URL, or short link' },
+        { name: 'note-id', positional: true, required: true, help: 'Full Xiaohongshu note URL with xsec_token, or xhslink short link' },
         { name: 'output', default: './xiaohongshu-downloads', help: 'Output directory' },
     ],
     columns: ['index', 'type', 'status', 'size'],
@@ -26,12 +27,17 @@ cli({
         const rawInput = String(kwargs['note-id']);
         const output = kwargs.output;
         const noteId = parseNoteId(rawInput);
-        await page.goto(buildNoteUrl(rawInput));
+        await page.goto(buildNoteUrl(rawInput, { allowShortLink: true, commandName: 'xiaohongshu download' }));
+        await page.wait({ time: 1 + Math.random() * 2 });
         // Extract note info and media URLs
         const data = await page.evaluate(`
       (() => {
+        const bodyText = document.body?.innerText || '';
         const result = {
           noteId: '${noteId}',
+          pageUrl: location.href,
+          securityBlock: /安全限制|访问链接异常/.test(bodyText)
+            || /website-login\\/error|error_code=300017|error_code=300031/.test(location.href),
           title: '',
           author: '',
           media: []
@@ -44,9 +50,9 @@ cli({
           seenMedia.add(key);
           result.media.push({ type, url });
         };
-        const locationMatch = (location.pathname || '').match(/\\/(?:explore|note|search_result|discovery\\/item)\\/([a-f0-9]+)/i);
+        const locationMatch = (location.pathname || '').match(/\\/(?:explore|note|search_result|discovery\\/item)\\/([a-f0-9]+)|\\/user\\/profile\\/[^/?#]+\\/([a-f0-9]+)/i);
         if (locationMatch) {
-          result.noteId = locationMatch[1];
+          result.noteId = locationMatch[1] || locationMatch[2];
         }
 
         // Get title
@@ -148,6 +154,11 @@ cli({
         return result;
       })()
     `);
+        if (data?.securityBlock) {
+            throw new CliError('SECURITY_BLOCK', 'Xiaohongshu security block: the note detail page was blocked by risk control.', /^https?:\/\//.test(rawInput)
+                ? 'The page may be temporarily restricted. Try again later or from a different session.'
+                : 'Try using a full URL from search results (with xsec_token) instead of a bare note ID.');
+        }
         if (!data || !data.media || data.media.length === 0) {
             return [{ index: 0, type: '-', status: 'failed', size: 'No media found' }];
         }

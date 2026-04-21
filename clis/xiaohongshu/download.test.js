@@ -70,4 +70,46 @@ describe('xiaohongshu download', () => {
             filenamePrefix: '69bc166f000000001a02069a',
         }));
     });
+    it('uses canonical note id for signed user profile note URLs', async () => {
+        const page = createPageMock({
+            noteId: '',
+            media: [{ type: 'image', url: 'https://ci.xiaohongshu.com/example.jpg' }],
+        });
+        const fullUrl = 'https://www.xiaohongshu.com/user/profile/user123/69bc166f000000001a02069a?xsec_token=abc&xsec_source=pc_user';
+        await command.func(page, { 'note-id': fullUrl, output: './out' });
+        expect(page.goto.mock.calls[0][0]).toBe(fullUrl);
+        expect(mockDownloadMedia).toHaveBeenCalledWith([{ type: 'image', url: 'https://ci.xiaohongshu.com/example.jpg' }], expect.objectContaining({
+            subdir: '69bc166f000000001a02069a',
+            filenamePrefix: '69bc166f000000001a02069a',
+        }));
+    });
+    it('rejects bare note IDs before browser navigation', async () => {
+        const page = createPageMock({
+            noteId: '69bc166f000000001a02069a',
+            media: [],
+        });
+        await expect(command.func(page, { 'note-id': '69bc166f000000001a02069a', output: './out' })).rejects.toMatchObject({
+            code: 'ARGUMENT',
+            message: expect.stringContaining('signed URL'),
+            hint: expect.stringContaining('xsec_token'),
+        });
+        expect(page.goto).not.toHaveBeenCalled();
+        expect(mockDownloadMedia).not.toHaveBeenCalled();
+    });
+    it('throws SECURITY_BLOCK with retry guidance for blocked full URLs', async () => {
+        const page = createPageMock({
+            pageUrl: 'https://www.xiaohongshu.com/website-login/error?error_code=300031',
+            securityBlock: true,
+            noteId: '69bc166f000000001a02069a',
+            media: [],
+        });
+        await expect(command.func(page, {
+            'note-id': 'https://www.xiaohongshu.com/explore/69bc166f000000001a02069a?xsec_token=abc&xsec_source=pc_search',
+            output: './out',
+        })).rejects.toMatchObject({
+            code: 'SECURITY_BLOCK',
+            hint: expect.stringContaining('Try again later'),
+        });
+        expect(mockDownloadMedia).not.toHaveBeenCalled();
+    });
 });

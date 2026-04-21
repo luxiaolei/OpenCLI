@@ -821,6 +821,43 @@
     "sourceFile": "arxiv/search.js"
   },
   {
+    "site": "baidu-scholar",
+    "name": "search",
+    "description": "百度学术搜索",
+    "domain": "xueshu.baidu.com",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "authors",
+      "journal",
+      "year",
+      "cited",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "baidu-scholar/search.js",
+    "sourceFile": "baidu-scholar/search.js",
+    "navigateBefore": false
+  },
+  {
     "site": "band",
     "name": "bands",
     "description": "List all Bands you belong to",
@@ -1287,11 +1324,17 @@
   {
     "site": "bilibili",
     "name": "favorite",
-    "description": "我的默认收藏夹",
+    "description": "我的收藏夹",
     "domain": "www.bilibili.com",
     "strategy": "cookie",
     "browser": true,
     "args": [
+      {
+        "name": "fid",
+        "type": "int",
+        "required": false,
+        "help": "Favorite folder ID (defaults to first folder)"
+      },
       {
         "name": "limit",
         "type": "int",
@@ -1322,32 +1365,73 @@
   {
     "site": "bilibili",
     "name": "feed",
-    "description": "关注的人的动态时间线",
+    "description": "动态时间线（不传 uid 查关注时间线，传 uid 查指定用户动态）",
     "domain": "www.bilibili.com",
     "strategy": "cookie",
     "browser": true,
     "args": [
       {
+        "name": "uid",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "用户 UID 或用户名（不传则显示关注时间线）"
+      },
+      {
         "name": "limit",
         "type": "int",
         "default": 20,
         "required": false,
-        "help": "Number of results"
+        "help": "Max results to return"
       },
       {
         "name": "type",
         "type": "str",
         "default": "all",
         "required": false,
-        "help": "Filter: all, video, article"
+        "help": "Filter: all, video, article, draw, text"
+      },
+      {
+        "name": "pages",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Number of pages to fetch (each ~20 items)"
       }
     ],
     "columns": [
       "rank",
+      "time",
       "author",
       "title",
       "type",
+      "likes",
       "url"
+    ],
+    "type": "js",
+    "modulePath": "bilibili/feed.js",
+    "sourceFile": "bilibili/feed.js",
+    "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "bilibili",
+    "name": "feed-detail",
+    "description": "查看 Bilibili 动态详情（支持充电专属内容）",
+    "domain": "www.bilibili.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "动态 ID（从 feed 命令的 url 中获取）"
+      }
+    ],
+    "columns": [
+      "field",
+      "value"
     ],
     "type": "js",
     "modulePath": "bilibili/feed.js",
@@ -1631,6 +1715,342 @@
     "modulePath": "bilibili/user-videos.js",
     "sourceFile": "bilibili/user-videos.js",
     "navigateBefore": "https://www.bilibili.com"
+  },
+  {
+    "site": "binance",
+    "name": "asks",
+    "description": "Order book ask prices for a trading pair",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Trading pair symbol (e.g. BTCUSDT, ETHUSDT)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of price levels (5, 10, 20, 50, 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "ask_price",
+      "ask_qty"
+    ],
+    "type": "js",
+    "modulePath": "binance/asks.js",
+    "sourceFile": "binance/asks.js"
+  },
+  {
+    "site": "binance",
+    "name": "depth",
+    "description": "Order book bid and ask prices for a trading pair",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Trading pair symbol (e.g. BTCUSDT, ETHUSDT)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of price levels (5, 10, 20, 50, 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "bid_price",
+      "bid_qty",
+      "ask_price",
+      "ask_qty"
+    ],
+    "type": "js",
+    "modulePath": "binance/depth.js",
+    "sourceFile": "binance/depth.js"
+  },
+  {
+    "site": "binance",
+    "name": "gainers",
+    "description": "Top gaining trading pairs by 24h price change",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of trading pairs"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "price",
+      "change_24h",
+      "volume"
+    ],
+    "type": "js",
+    "modulePath": "binance/gainers.js",
+    "sourceFile": "binance/gainers.js"
+  },
+  {
+    "site": "binance",
+    "name": "klines",
+    "description": "Candlestick/kline data for a trading pair",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Trading pair symbol (e.g. BTCUSDT, ETHUSDT)"
+      },
+      {
+        "name": "interval",
+        "type": "str",
+        "default": "1d",
+        "required": false,
+        "help": "Kline interval (1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of klines (max 1000)"
+      }
+    ],
+    "columns": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "type": "js",
+    "modulePath": "binance/klines.js",
+    "sourceFile": "binance/klines.js"
+  },
+  {
+    "site": "binance",
+    "name": "losers",
+    "description": "Top losing trading pairs by 24h price change",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of trading pairs"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "price",
+      "change_24h",
+      "volume"
+    ],
+    "type": "js",
+    "modulePath": "binance/losers.js",
+    "sourceFile": "binance/losers.js"
+  },
+  {
+    "site": "binance",
+    "name": "pairs",
+    "description": "List active trading pairs on Binance",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of trading pairs"
+      }
+    ],
+    "columns": [
+      "symbol",
+      "base",
+      "quote",
+      "status"
+    ],
+    "type": "js",
+    "modulePath": "binance/pairs.js",
+    "sourceFile": "binance/pairs.js"
+  },
+  {
+    "site": "binance",
+    "name": "price",
+    "description": "Quick price check for a trading pair",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Trading pair symbol (e.g. BTCUSDT, ETHUSDT)"
+      }
+    ],
+    "columns": [
+      "symbol",
+      "price",
+      "change",
+      "change_pct",
+      "high",
+      "low",
+      "volume",
+      "quote_volume",
+      "trades"
+    ],
+    "type": "js",
+    "modulePath": "binance/price.js",
+    "sourceFile": "binance/price.js"
+  },
+  {
+    "site": "binance",
+    "name": "prices",
+    "description": "Latest prices for all trading pairs",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of prices"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "price"
+    ],
+    "type": "js",
+    "modulePath": "binance/prices.js",
+    "sourceFile": "binance/prices.js"
+  },
+  {
+    "site": "binance",
+    "name": "ticker",
+    "description": "24h ticker statistics for top trading pairs by volume",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of tickers"
+      }
+    ],
+    "columns": [
+      "symbol",
+      "price",
+      "change_pct",
+      "high",
+      "low",
+      "volume",
+      "quote_vol",
+      "trades"
+    ],
+    "type": "js",
+    "modulePath": "binance/ticker.js",
+    "sourceFile": "binance/ticker.js"
+  },
+  {
+    "site": "binance",
+    "name": "top",
+    "description": "Top trading pairs by 24h volume on Binance",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of trading pairs"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "price",
+      "change_24h",
+      "high",
+      "low",
+      "volume"
+    ],
+    "type": "js",
+    "modulePath": "binance/top.js",
+    "sourceFile": "binance/top.js"
+  },
+  {
+    "site": "binance",
+    "name": "trades",
+    "description": "Recent trades for a trading pair",
+    "domain": "data-api.binance.vision",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Trading pair symbol (e.g. BTCUSDT, ETHUSDT)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of trades (max 1000)"
+      }
+    ],
+    "columns": [
+      "id",
+      "price",
+      "qty",
+      "quote_qty",
+      "buyer_maker"
+    ],
+    "type": "js",
+    "modulePath": "binance/trades.js",
+    "sourceFile": "binance/trades.js"
   },
   {
     "site": "bloomberg",
@@ -2814,6 +3234,47 @@
   },
   {
     "site": "chatgpt",
+    "name": "image",
+    "description": "Generate images with ChatGPT web and save them locally",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Image prompt to send to ChatGPT"
+      },
+      {
+        "name": "op",
+        "type": "str",
+        "default": "/Users/jakevin/Pictures/chatgpt",
+        "required": false,
+        "help": "Output directory"
+      },
+      {
+        "name": "sd",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Skip download shorthand; only show ChatGPT link"
+      }
+    ],
+    "columns": [
+      "status",
+      "file",
+      "link"
+    ],
+    "timeout": 240,
+    "type": "js",
+    "modulePath": "chatgpt/image.js",
+    "sourceFile": "chatgpt/image.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt-app",
     "name": "ask",
     "description": "Send a prompt and wait for the AI response (send + wait + read)",
     "domain": "localhost",
@@ -2853,185 +3314,11 @@
       "Text"
     ],
     "type": "js",
-    "modulePath": "chatgpt/ask.js",
-    "sourceFile": "chatgpt/ask.js"
+    "modulePath": "chatgpt-app/ask.js",
+    "sourceFile": "chatgpt-app/ask.js"
   },
   {
-    "site": "chatgpt",
-    "name": "deep-research",
-    "description": "Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state",
-    "domain": "chatgpt.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [
-      {
-        "name": "prompt",
-        "type": "str",
-        "required": true,
-        "positional": true,
-        "help": "Prompt to send into ChatGPT Deep Research"
-      },
-      {
-        "name": "timeout",
-        "type": "str",
-        "default": "30",
-        "required": false,
-        "help": "Max seconds to wait for retry-required before falling back to submitted/pending (default: 30)"
-      }
-    ],
-    "columns": [
-      "ui_state",
-      "conversation_url",
-      "conversation_id",
-      "thread_title",
-      "mode_label"
-    ],
-    "timeout": 180,
-    "type": "js",
-    "modulePath": "chatgpt/deep-research.js",
-    "sourceFile": "chatgpt/deep-research.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "chatgpt",
-    "name": "deep-research-status",
-    "description": "Classify the visible UI state of a ChatGPT Deep Research thread",
-    "domain": "chatgpt.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [
-      {
-        "name": "query",
-        "type": "str",
-        "required": false,
-        "positional": true,
-        "help": "Conversation URL, title query, or empty for latest/current"
-      },
-      {
-        "name": "match",
-        "type": "str",
-        "default": "contains",
-        "required": false,
-        "help": "Title match mode: contains or exact"
-      }
-    ],
-    "columns": [
-      "ui_state",
-      "conversation_url",
-      "conversation_id",
-      "thread_title",
-      "mode_label"
-    ],
-    "timeout": 180,
-    "type": "js",
-    "modulePath": "chatgpt/deep-research-status.js",
-    "sourceFile": "chatgpt/deep-research-status.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "chatgpt",
-    "name": "image-capabilities",
-    "description": "Inspect the currently visible ChatGPT Images capabilities for the logged-in browser session",
-    "domain": "chatgpt.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [],
-    "columns": [
-      "Category",
-      "Name",
-      "Value"
-    ],
-    "timeout": 180,
-    "type": "js",
-    "modulePath": "chatgpt/image-capabilities.js",
-    "sourceFile": "chatgpt/image-capabilities.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "chatgpt",
-    "name": "image-create",
-    "description": "Create an image from the ChatGPT /images workbench and return a conservative submission/result state",
-    "domain": "chatgpt.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [
-      {
-        "name": "prompt",
-        "type": "str",
-        "required": true,
-        "positional": true,
-        "help": "Prompt to send into the ChatGPT /images workbench"
-      },
-      {
-        "name": "timeout",
-        "type": "str",
-        "default": "30",
-        "required": false,
-        "help": "Max seconds to wait for a visible result signal before falling back to submitted (default: 30)"
-      }
-    ],
-    "columns": [
-      "action",
-      "status",
-      "page_url",
-      "conversation_id"
-    ],
-    "timeout": 180,
-    "type": "js",
-    "modulePath": "chatgpt/image-create.js",
-    "sourceFile": "chatgpt/image-create.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "chatgpt",
-    "name": "image-edit",
-    "description": "Open a target ChatGPT image from /images or a specific conversation URL and submit a conservative edit prompt",
-    "domain": "chatgpt.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [
-      {
-        "name": "prompt",
-        "type": "str",
-        "required": true,
-        "positional": true,
-        "help": "Edit prompt to send for the selected ChatGPT image"
-      },
-      {
-        "name": "url",
-        "type": "str",
-        "required": false,
-        "help": "Optional ChatGPT conversation URL to target a specific image-edit thread"
-      },
-      {
-        "name": "image",
-        "type": "str",
-        "default": "1",
-        "required": false,
-        "help": "1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)"
-      },
-      {
-        "name": "timeout",
-        "type": "str",
-        "default": "30",
-        "required": false,
-        "help": "Max seconds to wait for a visible edited result signal before falling back to submitted (default: 30)"
-      }
-    ],
-    "columns": [
-      "action",
-      "status",
-      "page_url",
-      "conversation_id"
-    ],
-    "timeout": 180,
-    "type": "js",
-    "modulePath": "chatgpt/image-edit.js",
-    "sourceFile": "chatgpt/image-edit.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "chatgpt",
+    "site": "chatgpt-app",
     "name": "model",
     "description": "Switch ChatGPT Desktop model/mode (auto, instant, thinking, 5.2-instant, 5.2-thinking)",
     "domain": "localhost",
@@ -3058,11 +3345,11 @@
       "Model"
     ],
     "type": "js",
-    "modulePath": "chatgpt/model.js",
-    "sourceFile": "chatgpt/model.js"
+    "modulePath": "chatgpt-app/model.js",
+    "sourceFile": "chatgpt-app/model.js"
   },
   {
-    "site": "chatgpt",
+    "site": "chatgpt-app",
     "name": "new",
     "description": "Open a new chat in ChatGPT Desktop App",
     "domain": "localhost",
@@ -3073,11 +3360,11 @@
       "Status"
     ],
     "type": "js",
-    "modulePath": "chatgpt/new.js",
-    "sourceFile": "chatgpt/new.js"
+    "modulePath": "chatgpt-app/new.js",
+    "sourceFile": "chatgpt-app/new.js"
   },
   {
-    "site": "chatgpt",
+    "site": "chatgpt-app",
     "name": "read",
     "description": "Read the last visible message from the focused ChatGPT Desktop window",
     "domain": "localhost",
@@ -3089,11 +3376,11 @@
       "Text"
     ],
     "type": "js",
-    "modulePath": "chatgpt/read.js",
-    "sourceFile": "chatgpt/read.js"
+    "modulePath": "chatgpt-app/read.js",
+    "sourceFile": "chatgpt-app/read.js"
   },
   {
-    "site": "chatgpt",
+    "site": "chatgpt-app",
     "name": "send",
     "description": "Send a message to the active ChatGPT Desktop App window",
     "domain": "localhost",
@@ -3125,11 +3412,11 @@
       "Status"
     ],
     "type": "js",
-    "modulePath": "chatgpt/send.js",
-    "sourceFile": "chatgpt/send.js"
+    "modulePath": "chatgpt-app/send.js",
+    "sourceFile": "chatgpt-app/send.js"
   },
   {
-    "site": "chatgpt",
+    "site": "chatgpt-app",
     "name": "status",
     "description": "Check if ChatGPT Desktop App is running natively on macOS",
     "domain": "localhost",
@@ -3140,8 +3427,8 @@
       "Status"
     ],
     "type": "js",
-    "modulePath": "chatgpt/status.js",
-    "sourceFile": "chatgpt/status.js"
+    "modulePath": "chatgpt-app/status.js",
+    "sourceFile": "chatgpt-app/status.js"
   },
   {
     "site": "chatwise",
@@ -3779,6 +4066,147 @@
     "navigateBefore": true
   },
   {
+    "site": "deepseek",
+    "name": "ask",
+    "description": "Send a prompt to DeepSeek and get the response",
+    "domain": "chat.deepseek.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Prompt to send"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 120,
+        "required": false,
+        "help": "Max seconds to wait for response"
+      },
+      {
+        "name": "new",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Start a new chat before sending"
+      },
+      {
+        "name": "model",
+        "type": "str",
+        "default": "instant",
+        "required": false,
+        "help": "Model to use: instant or expert",
+        "choices": [
+          "instant",
+          "expert"
+        ]
+      },
+      {
+        "name": "think",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Enable DeepThink mode"
+      },
+      {
+        "name": "search",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Enable web search"
+      }
+    ],
+    "columns": [
+      "response"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "deepseek/ask.js",
+    "sourceFile": "deepseek/ask.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "deepseek",
+    "name": "history",
+    "description": "List conversation history from DeepSeek sidebar",
+    "domain": "chat.deepseek.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max conversations to show"
+      }
+    ],
+    "columns": [
+      "Index",
+      "Title",
+      "Url"
+    ],
+    "type": "js",
+    "modulePath": "deepseek/history.js",
+    "sourceFile": "deepseek/history.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "deepseek",
+    "name": "new",
+    "description": "Start a new conversation in DeepSeek",
+    "domain": "chat.deepseek.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "Status"
+    ],
+    "type": "js",
+    "modulePath": "deepseek/new.js",
+    "sourceFile": "deepseek/new.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "deepseek",
+    "name": "read",
+    "description": "Read the current DeepSeek conversation",
+    "domain": "chat.deepseek.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "Role",
+      "Text"
+    ],
+    "type": "js",
+    "modulePath": "deepseek/read.js",
+    "sourceFile": "deepseek/read.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "deepseek",
+    "name": "status",
+    "description": "Check DeepSeek page availability and login state",
+    "domain": "chat.deepseek.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "Status",
+      "Login",
+      "Url"
+    ],
+    "type": "js",
+    "modulePath": "deepseek/status.js",
+    "sourceFile": "deepseek/status.js",
+    "navigateBefore": false
+  },
+  {
     "site": "devto",
     "name": "tag",
     "description": "Latest DEV.to articles for a specific tag",
@@ -3965,6 +4393,31 @@
     "type": "js",
     "modulePath": "discord-app/channels.js",
     "sourceFile": "discord-app/channels.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "discord-app",
+    "name": "delete",
+    "description": "Delete a message by its ID in the active Discord channel",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "message_id",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": "The ID of the message to delete (visible via Developer Mode or the read command)"
+      }
+    ],
+    "columns": [
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "discord-app/delete.js",
+    "sourceFile": "discord-app/delete.js",
     "navigateBefore": true
   },
   {
@@ -4389,12 +4842,12 @@
     "type": "js",
     "modulePath": "douban/search.js",
     "sourceFile": "douban/search.js",
-    "navigateBefore": "https://search.douban.com"
+    "navigateBefore": false
   },
   {
     "site": "douban",
     "name": "subject",
-    "description": "获取电影详情",
+    "description": "获取豆瓣条目详情",
     "domain": "movie.douban.com",
     "strategy": "cookie",
     "browser": true,
@@ -4404,13 +4857,37 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "电影 ID"
+        "help": "豆瓣条目 ID"
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "default": "movie",
+        "required": false,
+        "help": "条目类型（movie=电影, book=图书）",
+        "choices": [
+          "movie",
+          "book"
+        ]
       }
     ],
     "columns": [
       "id",
+      "type",
       "title",
+      "subtitle",
       "originalTitle",
+      "authors",
+      "translators",
+      "publisher",
+      "publishDate",
+      "publishYear",
+      "pageCount",
+      "binding",
+      "price",
+      "series",
+      "isbn10",
+      "isbn13",
       "year",
       "rating",
       "ratingCount",
@@ -4425,7 +4902,7 @@
     "type": "js",
     "modulePath": "douban/subject.js",
     "sourceFile": "douban/subject.js",
-    "navigateBefore": "https://movie.douban.com"
+    "navigateBefore": false
   },
   {
     "site": "douban",
@@ -5374,6 +5851,561 @@
     "navigateBefore": "https://creator.douyin.com"
   },
   {
+    "site": "eastmoney",
+    "name": "announcement",
+    "description": "上市公司公告（按交易所筛选）",
+    "domain": "np-anotice-stock.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "market",
+        "type": "string",
+        "default": "SHA,SZA,BJA",
+        "required": false,
+        "help": "交易所：SHA (沪) / SZA (深) / BJA (北) 可逗号分隔"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "time",
+      "code",
+      "name",
+      "title",
+      "category",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/announcement.js",
+    "sourceFile": "eastmoney/announcement.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "convertible",
+    "description": "可转债行情列表（默认按成交额排序）",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "sort",
+        "type": "string",
+        "default": "turnover",
+        "required": false,
+        "help": "排序：turnover / change / drop / price / premium"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "bondCode",
+      "bondName",
+      "bondPrice",
+      "bondChangePct",
+      "stockCode",
+      "stockName",
+      "stockPrice",
+      "stockChangePct",
+      "convPrice",
+      "convValue",
+      "convPremiumPct",
+      "remainingYears",
+      "ytm",
+      "listDate"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/convertible.js",
+    "sourceFile": "eastmoney/convertible.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "etf",
+    "description": "ETF 列表按成交额/涨跌幅排行",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "sort",
+        "type": "string",
+        "default": "turnover",
+        "required": false,
+        "help": "排序：turnover / change / drop / volume / rate"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "price",
+      "changePercent",
+      "change",
+      "turnover",
+      "volume",
+      "turnoverRate"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/etf.js",
+    "sourceFile": "eastmoney/etf.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "holders",
+    "description": "十大流通股东（A股 F10 数据）",
+    "domain": "datacenter-web.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "A股代码（600519 / sh600519 等）"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回股东数（默认十大流通股东）"
+      }
+    ],
+    "columns": [
+      "rank",
+      "reportDate",
+      "name",
+      "holdNum",
+      "floatRatio",
+      "change"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/holders.js",
+    "sourceFile": "eastmoney/holders.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "hot-rank",
+    "description": "东方财富热股榜",
+    "domain": "guba.eastmoney.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "name",
+      "price",
+      "changePercent",
+      "heat",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/hot-rank.js",
+    "sourceFile": "eastmoney/hot-rank.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "eastmoney",
+    "name": "index-board",
+    "description": "主要市场指数行情（A股 / 港股 / 美股）",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "group",
+        "type": "string",
+        "default": "main",
+        "required": false,
+        "help": "指数分组：main (A股主要), hk (港股), us (美股), all"
+      }
+    ],
+    "columns": [
+      "code",
+      "name",
+      "price",
+      "changePercent",
+      "change",
+      "open",
+      "high",
+      "low",
+      "prevClose"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/index-board.js",
+    "sourceFile": "eastmoney/index-board.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "kline",
+    "description": "K线历史数据（分/日/周/月/前复权/后复权）",
+    "domain": "push2his.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbol",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "股票代码（A/HK/US 均可）"
+      },
+      {
+        "name": "period",
+        "type": "string",
+        "default": "day",
+        "required": false,
+        "help": "周期：1m/5m/15m/30m/60m/day/week/month"
+      },
+      {
+        "name": "adjust",
+        "type": "string",
+        "default": "forward",
+        "required": false,
+        "help": "复权：none / forward / backward"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "返回最近 N 根（末尾）"
+      }
+    ],
+    "columns": [
+      "date",
+      "open",
+      "close",
+      "high",
+      "low",
+      "volume",
+      "turnover",
+      "amplitude",
+      "changePercent",
+      "change",
+      "turnoverRate"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/kline.js",
+    "sourceFile": "eastmoney/kline.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "kuaixun",
+    "description": "东方财富 7x24 财经快讯",
+    "domain": "np-listapi.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "default": "102",
+        "required": false,
+        "help": "频道：102 (重要) / 101 (全部) / 104 / 105 / 106 / 107"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "time",
+      "title",
+      "summary",
+      "stocks"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/kuaixun.js",
+    "sourceFile": "eastmoney/kuaixun.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "longhu",
+    "description": "龙虎榜明细（A股交易所公开披露榜单）",
+    "domain": "datacenter-web.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "date",
+        "type": "string",
+        "default": "",
+        "required": false,
+        "help": "开始交易日 YYYY-MM-DD (默认昨天)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "tradeDate",
+      "code",
+      "name",
+      "closePrice",
+      "changeRate",
+      "boardAmt",
+      "buyAmt",
+      "sellAmt",
+      "netAmt",
+      "turnover",
+      "dealRatio",
+      "market",
+      "reason"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/longhu.js",
+    "sourceFile": "eastmoney/longhu.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "money-flow",
+    "description": "主力资金净流入排行（今日/5日/10日）",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "range",
+        "type": "string",
+        "default": "today",
+        "required": false,
+        "help": "周期：today / 5d / 10d"
+      },
+      {
+        "name": "order",
+        "type": "string",
+        "default": "desc",
+        "required": false,
+        "help": "排序：desc (净流入排行) / asc (净流出)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "price",
+      "changePercent",
+      "mainNet",
+      "mainNetRatio",
+      "superNet",
+      "bigNet",
+      "mediumNet",
+      "smallNet"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/money-flow.js",
+    "sourceFile": "eastmoney/money-flow.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "northbound",
+    "description": "沪深港通北向/南向资金当日分时净流入（万元）",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "direction",
+        "type": "string",
+        "default": "north",
+        "required": false,
+        "help": "方向：north (北向，即外资买A) / south (南向，即内地买港)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回最近 N 分钟"
+      }
+    ],
+    "columns": [
+      "time",
+      "cumulativeNetYi",
+      "minuteNetYi",
+      "totalNetYi"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/northbound.js",
+    "sourceFile": "eastmoney/northbound.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "quote",
+    "description": "个股实时行情（A股 / 港股 / 美股）— 来自 push2.eastmoney.com",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "symbols",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "股票代码（可用逗号/空格分隔多个）"
+      }
+    ],
+    "columns": [
+      "code",
+      "name",
+      "market",
+      "price",
+      "changePercent",
+      "change",
+      "open",
+      "high",
+      "low",
+      "prevClose",
+      "volume",
+      "turnover",
+      "turnoverRate",
+      "amplitude",
+      "peDynamic",
+      "priceBook",
+      "marketCap",
+      "floatMarketCap"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/quote.js",
+    "sourceFile": "eastmoney/quote.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "rank",
+    "description": "东财市场涨跌/成交排行（沪深/北证/创/科/港/美）",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "market",
+        "type": "string",
+        "default": "hs-a",
+        "required": false,
+        "help": "市场：hs-a / sh-a / sz-a / bj-a / cyb / kcb / hk / us"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "default": "change",
+        "required": false,
+        "help": "排序：change / drop / turnover / volume / amplitude / rate"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "price",
+      "changePercent",
+      "change",
+      "turnover",
+      "volume",
+      "turnoverRate",
+      "peDynamic",
+      "marketCap"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/rank.js",
+    "sourceFile": "eastmoney/rank.js"
+  },
+  {
+    "site": "eastmoney",
+    "name": "sectors",
+    "description": "板块排行（行业/概念/地域）按涨跌幅、主力资金或成交额排序",
+    "domain": "push2.eastmoney.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "type",
+        "type": "string",
+        "default": "industry",
+        "required": false,
+        "help": "板块类型：industry / concept / region"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "default": "change",
+        "required": false,
+        "help": "排序：change / drop / money-flow / out-flow / turnover"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量 (max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "code",
+      "name",
+      "price",
+      "changePercent",
+      "mainNet",
+      "leadStock",
+      "leadChangePercent",
+      "upCount",
+      "downCount"
+    ],
+    "type": "js",
+    "modulePath": "eastmoney/sectors.js",
+    "sourceFile": "eastmoney/sectors.js"
+  },
+  {
     "site": "facebook",
     "name": "add-friend",
     "description": "Send a friend request on Facebook",
@@ -5791,19 +6823,19 @@
         "type": "str",
         "default": "1:1",
         "required": false,
-        "help": "Prompt-level ratio shorthand (not a native Gemini UI control): 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3"
+        "help": "Ratio shorthand for aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3)"
       },
       {
         "name": "st",
         "type": "str",
         "default": "",
         "required": false,
-        "help": "Prompt-level style shorthand, e.g. anime, icon, watercolor (not a native Gemini template selector)"
+        "help": "Style shorthand, e.g. anime, icon, watercolor"
       },
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/xlmini/tmp/gemini-images",
+        "default": "/Users/jakevin/tmp/gemini-images",
         "required": false,
         "help": "Output directory shorthand"
       },
@@ -5824,31 +6856,6 @@
     "type": "js",
     "modulePath": "gemini/image.js",
     "sourceFile": "gemini/image.js",
-    "navigateBefore": false
-  },
-  {
-    "site": "gemini",
-    "name": "image-capabilities",
-    "description": "Inspect visible Gemini Create image capabilities without generating images",
-    "domain": "gemini.google.com",
-    "strategy": "cookie",
-    "browser": true,
-    "args": [],
-    "columns": [
-      "status",
-      "page_title",
-      "create_image_entry_visible",
-      "create_image_mode_active",
-      "template_cards",
-      "upload_affordances",
-      "tool_buttons",
-      "mode_buttons",
-      "page_url"
-    ],
-    "timeout": 90,
-    "type": "js",
-    "modulePath": "gemini/image-capabilities.js",
-    "sourceFile": "gemini/image-capabilities.js",
     "navigateBefore": false
   },
   {
@@ -6098,6 +7105,171 @@
     "type": "js",
     "modulePath": "google/trends.js",
     "sourceFile": "google/trends.js"
+  },
+  {
+    "site": "google-scholar",
+    "name": "search",
+    "description": "Google Scholar 学术搜索",
+    "domain": "scholar.google.com",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "authors",
+      "source",
+      "year",
+      "cited",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "google-scholar/search.js",
+    "sourceFile": "google-scholar/search.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gov-law",
+    "name": "recent",
+    "description": "最新法律法规",
+    "domain": "flk.npc.gov.cn",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "status",
+      "publish_date",
+      "type",
+      "department"
+    ],
+    "type": "js",
+    "modulePath": "gov-law/recent.js",
+    "sourceFile": "gov-law/recent.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gov-law",
+    "name": "search",
+    "description": "国家法律法规数据库搜索",
+    "domain": "flk.npc.gov.cn",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "status",
+      "publish_date",
+      "type",
+      "department"
+    ],
+    "type": "js",
+    "modulePath": "gov-law/search.js",
+    "sourceFile": "gov-law/search.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gov-policy",
+    "name": "recent",
+    "description": "国务院最新政策文件",
+    "domain": "www.gov.cn",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "date",
+      "source",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "gov-policy/recent.js",
+    "sourceFile": "gov-policy/recent.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "gov-policy",
+    "name": "search",
+    "description": "中国政府网政策文件搜索",
+    "domain": "sousuo.www.gov.cn",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "description",
+      "date",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "gov-policy/search.js",
+    "sourceFile": "gov-policy/search.js",
+    "navigateBefore": false
   },
   {
     "site": "grok",
@@ -6944,7 +8116,7 @@
       {
         "name": "path",
         "type": "str",
-        "default": "/Users/xlmini/Downloads/Instagram",
+        "default": "/Users/jakevin/Downloads/Instagram",
         "required": false,
         "help": "Download directory"
       }
@@ -8164,6 +9336,206 @@
     "navigateBefore": "https://jimeng.jianying.com"
   },
   {
+    "site": "ke",
+    "name": "chengjiao",
+    "description": "贝壳找房成交记录",
+    "domain": "ke.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "default": "bj",
+        "required": false,
+        "help": "城市代码，如 bj(北京), sh(上海), gz(广州), sz(深圳), zs(中山)"
+      },
+      {
+        "name": "district",
+        "type": "str",
+        "required": false,
+        "help": "区域拼音，如 chaoyang, haidian"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "title",
+      "community",
+      "layout",
+      "area",
+      "deal_price",
+      "unit_price",
+      "deal_date"
+    ],
+    "type": "js",
+    "modulePath": "ke/chengjiao.js",
+    "sourceFile": "ke/chengjiao.js",
+    "navigateBefore": "https://ke.com"
+  },
+  {
+    "site": "ke",
+    "name": "ershoufang",
+    "description": "贝壳找房二手房列表",
+    "domain": "ke.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "default": "bj",
+        "required": false,
+        "help": "城市代码，如 bj(北京), sh(上海), gz(广州), sz(深圳), zs(中山)"
+      },
+      {
+        "name": "district",
+        "type": "str",
+        "required": false,
+        "help": "区域拼音，如 chaoyang, haidian, tianhe"
+      },
+      {
+        "name": "min-price",
+        "type": "int",
+        "required": false,
+        "help": "最低总价（万元）"
+      },
+      {
+        "name": "max-price",
+        "type": "int",
+        "required": false,
+        "help": "最高总价（万元）"
+      },
+      {
+        "name": "rooms",
+        "type": "int",
+        "required": false,
+        "help": "几居室 (1-5)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "title",
+      "community",
+      "layout",
+      "area",
+      "direction",
+      "total_price",
+      "unit_price",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ke/ershoufang.js",
+    "sourceFile": "ke/ershoufang.js",
+    "navigateBefore": "https://ke.com"
+  },
+  {
+    "site": "ke",
+    "name": "xiaoqu",
+    "description": "贝壳找房小区列表",
+    "domain": "ke.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "default": "bj",
+        "required": false,
+        "help": "城市代码，如 bj(北京), sh(上海), gz(广州), sz(深圳), zs(中山)"
+      },
+      {
+        "name": "district",
+        "type": "str",
+        "required": false,
+        "help": "区域拼音，如 chaoyang, haidian"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "name",
+      "district",
+      "avg_price",
+      "year",
+      "on_sale"
+    ],
+    "type": "js",
+    "modulePath": "ke/xiaoqu.js",
+    "sourceFile": "ke/xiaoqu.js",
+    "navigateBefore": "https://ke.com"
+  },
+  {
+    "site": "ke",
+    "name": "zufang",
+    "description": "贝壳找房租房列表",
+    "domain": "ke.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "city",
+        "type": "str",
+        "default": "bj",
+        "required": false,
+        "help": "城市代码，如 bj(北京), sh(上海), gz(广州), sz(深圳), zs(中山)"
+      },
+      {
+        "name": "district",
+        "type": "str",
+        "required": false,
+        "help": "区域拼音，如 chaoyang, haidian"
+      },
+      {
+        "name": "min-price",
+        "type": "int",
+        "required": false,
+        "help": "最低月租（元）"
+      },
+      {
+        "name": "max-price",
+        "type": "int",
+        "required": false,
+        "help": "最高月租（元）"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "title",
+      "community",
+      "area",
+      "layout",
+      "price",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "ke/zufang.js",
+    "sourceFile": "ke/zufang.js",
+    "navigateBefore": "https://ke.com"
+  },
+  {
     "site": "lesswrong",
     "name": "comments",
     "description": "Top comments on a post",
@@ -9275,6 +10647,129 @@
     "sourceFile": "lobsters/tag.js"
   },
   {
+    "site": "maimai",
+    "name": "search-talents",
+    "description": "Search for candidates on Maimai with multi-dimensional filters",
+    "domain": "maimai.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search keyword (e.g., \"Java\", \"产品经理\")"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": 0,
+        "required": false,
+        "help": "Page number (0-based)"
+      },
+      {
+        "name": "size",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Results per page"
+      },
+      {
+        "name": "positions",
+        "type": "str",
+        "required": false,
+        "help": "Positions (e.g., \"运营\", \"Java 开发工程师\")"
+      },
+      {
+        "name": "companies",
+        "type": "str",
+        "required": false,
+        "help": "Companies, comma-separated (e.g., \"百度\", \"字节跳动，阿里巴巴\")"
+      },
+      {
+        "name": "schools",
+        "type": "str",
+        "required": false,
+        "help": "Schools, comma-separated (e.g., \"北京大学\", \"清华大学，复旦大学\")"
+      },
+      {
+        "name": "provinces",
+        "type": "str",
+        "required": false,
+        "help": "Provinces (e.g., \"北京\", \"上海\")"
+      },
+      {
+        "name": "cities",
+        "type": "str",
+        "required": false,
+        "help": "Cities (e.g., \"北京市\", \"上海市\")"
+      },
+      {
+        "name": "worktimes",
+        "type": "str",
+        "required": false,
+        "help": "Work years: 1=1-3y, 2=3-5y, 3=5-10y, 4=10+y"
+      },
+      {
+        "name": "degrees",
+        "type": "str",
+        "required": false,
+        "help": "Education: 1=大专，2=本科，3=硕士，4=博士，5=MBA"
+      },
+      {
+        "name": "professions",
+        "type": "str",
+        "required": false,
+        "help": "Industries: 01=互联网，02=金融，03=电子，04=通信"
+      },
+      {
+        "name": "is_211",
+        "type": "int",
+        "required": false,
+        "help": "211 university: 0=any, 1=211"
+      },
+      {
+        "name": "is_985",
+        "type": "int",
+        "required": false,
+        "help": "985 university: 0=any, 1=985"
+      },
+      {
+        "name": "sortby",
+        "type": "int",
+        "default": 0,
+        "required": false,
+        "help": "Sort: 0=relevance, 1=activity, 2=work_years, 3=education"
+      },
+      {
+        "name": "is_direct_chat",
+        "type": "int",
+        "default": 0,
+        "required": false,
+        "help": "Direct chat: 0=any, 1=available"
+      }
+    ],
+    "columns": [
+      "name",
+      "job_title",
+      "company",
+      "historical_companies",
+      "location",
+      "work_year",
+      "school",
+      "degree",
+      "active_status",
+      "age",
+      "tags",
+      "mutual_friends"
+    ],
+    "type": "js",
+    "modulePath": "maimai/search-talents.js",
+    "sourceFile": "maimai/search-talents.js",
+    "navigateBefore": "https://maimai.cn"
+  },
+  {
     "site": "medium",
     "name": "feed",
     "description": "Medium 热门文章 Feed",
@@ -9382,6 +10877,203 @@
     "modulePath": "medium/user.js",
     "sourceFile": "medium/user.js",
     "navigateBefore": "https://medium.com"
+  },
+  {
+    "site": "mubu",
+    "name": "doc",
+    "description": "读取幕布文档内容（默认输出 Markdown，可用 --output text 输出纯文本）",
+    "domain": "mubu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "文档 ID"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "md",
+        "required": false,
+        "help": "输出格式：md（默认，缩进列表 Markdown，适合导入 Obsidian）或 text（纯文本，适合终端阅读）"
+      }
+    ],
+    "columns": [
+      "content"
+    ],
+    "type": "js",
+    "modulePath": "mubu/doc.js",
+    "sourceFile": "mubu/doc.js",
+    "navigateBefore": "https://mubu.com"
+  },
+  {
+    "site": "mubu",
+    "name": "docs",
+    "description": "列出幕布文档（默认根目录，--starred 查看快速访问列表）",
+    "domain": "mubu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "folder",
+        "type": "str",
+        "default": "0",
+        "required": false,
+        "help": "文件夹 ID（默认根目录 0）"
+      },
+      {
+        "name": "starred",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "只显示快速访问的文档和文件夹"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "最多显示条数"
+      }
+    ],
+    "columns": [
+      "type",
+      "id",
+      "name",
+      "updated",
+      "stared"
+    ],
+    "type": "js",
+    "modulePath": "mubu/docs.js",
+    "sourceFile": "mubu/docs.js",
+    "navigateBefore": "https://mubu.com"
+  },
+  {
+    "site": "mubu",
+    "name": "notes",
+    "description": "读取幕布速记（默认今天）。支持 --date/--month/--year/--from/--to 指定时间范围，--list 为概览模式（日期+条数）。",
+    "domain": "mubu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "list",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "概览模式：只输出日期和条数，不含速记内容。可与任意时间范围参数组合。"
+      },
+      {
+        "name": "date",
+        "type": "str",
+        "required": false,
+        "help": "单日，格式 YYYY-MM-DD。不指定时间范围则默认今天（系统本地时间）。"
+      },
+      {
+        "name": "month",
+        "type": "str",
+        "required": false,
+        "help": "整月，格式 YYYY-MM。"
+      },
+      {
+        "name": "year",
+        "type": "int",
+        "required": false,
+        "help": "整年，格式 YYYY（整数）。"
+      },
+      {
+        "name": "from",
+        "type": "str",
+        "required": false,
+        "help": "范围起始日，格式 YYYY-MM-DD。须与 --to 同时使用。"
+      },
+      {
+        "name": "to",
+        "type": "str",
+        "required": false,
+        "help": "范围截止日，格式 YYYY-MM-DD。须与 --from 同时使用。"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "md",
+        "required": false,
+        "help": "输出格式：md（默认，Markdown）或 text（纯文本）"
+      }
+    ],
+    "columns": [
+      "date",
+      "content"
+    ],
+    "type": "js",
+    "modulePath": "mubu/notes.js",
+    "sourceFile": "mubu/notes.js",
+    "navigateBefore": "https://mubu.com"
+  },
+  {
+    "site": "mubu",
+    "name": "recent",
+    "description": "最近编辑的幕布文档",
+    "domain": "mubu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "最多显示条数"
+      }
+    ],
+    "columns": [
+      "id",
+      "name",
+      "updated"
+    ],
+    "type": "js",
+    "modulePath": "mubu/recent.js",
+    "sourceFile": "mubu/recent.js",
+    "navigateBefore": "https://mubu.com"
+  },
+  {
+    "site": "mubu",
+    "name": "search",
+    "description": "全局搜索幕布文档和文件夹（标题+内容，服务端全量匹配）。结果含 type/id/name/path/hits/snippet 字段。",
+    "domain": "mubu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 100,
+        "required": false,
+        "help": "最多显示条数（默认 100，结果被截断时用 --limit N 调大）"
+      }
+    ],
+    "columns": [
+      "type",
+      "id",
+      "name",
+      "path",
+      "hits",
+      "snippet"
+    ],
+    "type": "js",
+    "modulePath": "mubu/search.js",
+    "sourceFile": "mubu/search.js",
+    "navigateBefore": "https://mubu.com"
   },
   {
     "site": "notebooklm",
@@ -9867,6 +11559,499 @@
     "modulePath": "notion/write.js",
     "sourceFile": "notion/write.js",
     "navigateBefore": true
+  },
+  {
+    "site": "nowcoder",
+    "name": "companies",
+    "description": "Hot companies for interview prep",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "job",
+        "type": "str",
+        "default": "11002",
+        "required": false,
+        "help": "Job ID (11002=Java, 11003=C++, 11200=Backend, 11203=QA, 11201=Frontend)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "company",
+      "companyId"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/companies.js",
+    "sourceFile": "nowcoder/companies.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "creators",
+    "description": "Top content creators leaderboard",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "nickname",
+      "school",
+      "level",
+      "heat",
+      "tag"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/creators.js",
+    "sourceFile": "nowcoder/creators.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "detail",
+    "description": "Post detail view (supports ID / UUID / URL)",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Post ID, UUID, or URL"
+      }
+    ],
+    "columns": [
+      "title",
+      "author",
+      "school",
+      "content",
+      "likes",
+      "comments",
+      "views",
+      "time",
+      "location"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/detail.js",
+    "sourceFile": "nowcoder/detail.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "experience",
+    "description": "Interview experience posts",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Page number"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 15,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "author",
+      "school",
+      "likes",
+      "comments",
+      "views",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/experience.js",
+    "sourceFile": "nowcoder/experience.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "hot",
+    "description": "Hot search ranking",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "heat"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/hot.js",
+    "sourceFile": "nowcoder/hot.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "jobs",
+    "description": "Career category listing",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "id",
+      "career",
+      "learners"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/jobs.js",
+    "sourceFile": "nowcoder/jobs.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "notifications",
+    "description": "Unread message summary",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "type",
+      "unread"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/notifications.js",
+    "sourceFile": "nowcoder/notifications.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "papers",
+    "description": "Interview question bank by company and job",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "job",
+        "type": "str",
+        "default": "11002",
+        "required": false,
+        "help": "Job ID (11002=Java, 11003=C++, 11200=Backend, 11203=QA, 11201=Frontend)"
+      },
+      {
+        "name": "company",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Company ID (e.g. 139=Baidu, 138=Tencent, 239=Huawei)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "company",
+      "practitioners"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/papers.js",
+    "sourceFile": "nowcoder/papers.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "practice",
+    "description": "Categorized practice questions with progress",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "job",
+        "type": "str",
+        "default": "11226",
+        "required": false,
+        "help": "Career ID (11226=Software, 11227=Hardware, 11229=Product, 11230=Finance)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "category",
+      "subject",
+      "total",
+      "done",
+      "remaining"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/practice.js",
+    "sourceFile": "nowcoder/practice.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "recommend",
+    "description": "Recommended feed",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Page number"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 15,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "author",
+      "likes",
+      "comments",
+      "views",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/recommend.js",
+    "sourceFile": "nowcoder/recommend.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "referral",
+    "description": "Internal referral posts",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Page number"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 15,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "author",
+      "school",
+      "likes",
+      "comments",
+      "views",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/referral.js",
+    "sourceFile": "nowcoder/referral.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "salary",
+    "description": "Salary disclosure posts",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "page",
+        "type": "int",
+        "default": 1,
+        "required": false,
+        "help": "Page number"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 15,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "author",
+      "school",
+      "likes",
+      "comments",
+      "views",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/salary.js",
+    "sourceFile": "nowcoder/salary.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "search",
+    "description": "Full-text search",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search keyword"
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "default": "all",
+        "required": false,
+        "help": "Search type (all/post/question/user/job)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of results"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "author",
+      "school",
+      "content",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/search.js",
+    "sourceFile": "nowcoder/search.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "suggest",
+    "description": "Search suggestions",
+    "domain": "www.nowcoder.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search keyword"
+      }
+    ],
+    "columns": [
+      "rank",
+      "suggestion",
+      "type"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/suggest.js",
+    "sourceFile": "nowcoder/suggest.js",
+    "navigateBefore": "https://www.nowcoder.com"
+  },
+  {
+    "site": "nowcoder",
+    "name": "topics",
+    "description": "Hot discussion topics",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "topic",
+      "views",
+      "posts",
+      "heat",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/topics.js",
+    "sourceFile": "nowcoder/topics.js"
+  },
+  {
+    "site": "nowcoder",
+    "name": "trending",
+    "description": "Trending posts",
+    "domain": "www.nowcoder.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of items"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "heat",
+      "id"
+    ],
+    "type": "js",
+    "modulePath": "nowcoder/trending.js",
+    "sourceFile": "nowcoder/trending.js"
   },
   {
     "site": "ones",
@@ -12474,6 +14659,63 @@
     "navigateBefore": false
   },
   {
+    "site": "tdx",
+    "name": "hot-rank",
+    "description": "通达信热搜榜",
+    "domain": "pul.tdx.com.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "rank",
+      "symbol",
+      "name",
+      "changePercent",
+      "heat",
+      "tags"
+    ],
+    "type": "js",
+    "modulePath": "tdx/hot-rank.js",
+    "sourceFile": "tdx/hot-rank.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "ths",
+    "name": "hot-rank",
+    "description": "同花顺热股榜",
+    "domain": "eq.10jqka.com.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "返回数量"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "changePercent",
+      "heat",
+      "tags"
+    ],
+    "type": "js",
+    "modulePath": "ths/hot-rank.js",
+    "sourceFile": "ths/hot-rank.js",
+    "navigateBefore": true
+  },
+  {
     "site": "tieba",
     "name": "hot",
     "description": "Tieba hot topics",
@@ -13191,6 +15433,8 @@
       "author",
       "text",
       "likes",
+      "retweets",
+      "bookmarks",
       "url"
     ],
     "type": "js",
@@ -13446,6 +15690,142 @@
     "type": "js",
     "modulePath": "twitter/likes.js",
     "sourceFile": "twitter/likes.js",
+    "navigateBefore": "https://x.com"
+  },
+  {
+    "site": "twitter",
+    "name": "list-add",
+    "description": "Add a user to a Twitter/X list you own (no-op if already a member)",
+    "domain": "x.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "listId",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": ""
+      },
+      {
+        "name": "username",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": ""
+      }
+    ],
+    "columns": [
+      "listId",
+      "username",
+      "userId",
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "twitter/list-add.js",
+    "sourceFile": "twitter/list-add.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "twitter",
+    "name": "list-remove",
+    "description": "Remove a user from a Twitter/X list you own (toggles via UI; no-op if not currently a member)",
+    "domain": "x.com",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "listId",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": ""
+      },
+      {
+        "name": "username",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": ""
+      }
+    ],
+    "columns": [
+      "listId",
+      "username",
+      "userId",
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "twitter/list-remove.js",
+    "sourceFile": "twitter/list-remove.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "twitter",
+    "name": "list-tweets",
+    "description": "Fetch tweets from a Twitter/X list timeline",
+    "domain": "x.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "listId",
+        "type": "string",
+        "required": true,
+        "positional": true,
+        "help": ""
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": ""
+      }
+    ],
+    "columns": [
+      "id",
+      "author",
+      "text",
+      "likes",
+      "retweets",
+      "replies",
+      "created_at",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "twitter/list-tweets.js",
+    "sourceFile": "twitter/list-tweets.js",
+    "navigateBefore": "https://x.com"
+  },
+  {
+    "site": "twitter",
+    "name": "lists",
+    "description": "Get Twitter/X lists for the logged-in user (owned + subscribed)",
+    "domain": "x.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": ""
+      }
+    ],
+    "columns": [
+      "id",
+      "name",
+      "members",
+      "followers",
+      "mode"
+    ],
+    "type": "js",
+    "modulePath": "twitter/lists.js",
+    "sourceFile": "twitter/lists.js",
     "navigateBefore": "https://x.com"
   },
   {
@@ -13859,6 +16239,85 @@
     "navigateBefore": true
   },
   {
+    "site": "uiverse",
+    "name": "code",
+    "description": "Export Uiverse component code (HTML, CSS, React, or Vue)",
+    "domain": "uiverse.io",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "input",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Uiverse URL or author/slug identifier"
+      },
+      {
+        "name": "target",
+        "type": "str",
+        "required": true,
+        "help": "Code target to export",
+        "choices": [
+          "html",
+          "css",
+          "react",
+          "vue"
+        ]
+      }
+    ],
+    "columns": [
+      "target",
+      "username",
+      "slug",
+      "language",
+      "length"
+    ],
+    "type": "js",
+    "modulePath": "uiverse/code.js",
+    "sourceFile": "uiverse/code.js"
+  },
+  {
+    "site": "uiverse",
+    "name": "preview",
+    "description": "Capture a screenshot of the Uiverse preview element",
+    "domain": "uiverse.io",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "input",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Uiverse URL or author/slug identifier"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "required": false,
+        "help": "Output image path (defaults to a temp file)"
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 8,
+        "required": false,
+        "help": "Extra padding around the captured preview in pixels"
+      }
+    ],
+    "columns": [
+      "username",
+      "slug",
+      "width",
+      "height",
+      "output"
+    ],
+    "type": "js",
+    "modulePath": "uiverse/preview.js",
+    "sourceFile": "uiverse/preview.js"
+  },
+  {
     "site": "v2ex",
     "name": "daily",
     "description": "V2EX 每日签到并领取铜币",
@@ -14162,6 +16621,44 @@
     "sourceFile": "v2ex/user.js"
   },
   {
+    "site": "wanfang",
+    "name": "search",
+    "description": "万方数据论文搜索",
+    "domain": "s.wanfangdata.com.cn",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "搜索关键词"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回结果数量 (max 20)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "authors",
+      "source",
+      "year",
+      "type",
+      "cited",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "wanfang/search.js",
+    "sourceFile": "wanfang/search.js",
+    "navigateBefore": false
+  },
+  {
     "site": "web",
     "name": "read",
     "description": "Fetch any web page and export as Markdown",
@@ -14201,7 +16698,8 @@
       "author",
       "publish_time",
       "status",
-      "size"
+      "size",
+      "saved"
     ],
     "type": "js",
     "modulePath": "web/read.js",
@@ -14247,11 +16745,22 @@
   {
     "site": "weibo",
     "name": "feed",
-    "description": "Weibo home timeline (posts from followed users)",
+    "description": "Fetch Weibo timeline (for-you or following)",
     "domain": "weibo.com",
     "strategy": "cookie",
     "browser": true,
     "args": [
+      {
+        "name": "type",
+        "type": "str",
+        "default": "for-you",
+        "required": false,
+        "help": "Timeline type: for-you (algorithmic) or following (chronological)",
+        "choices": [
+          "for-you",
+          "following"
+        ]
+      },
       {
         "name": "limit",
         "type": "int",
@@ -14451,7 +16960,8 @@
       "author",
       "publish_time",
       "status",
-      "size"
+      "size",
+      "saved"
     ],
     "type": "js",
     "modulePath": "weixin/download.js",
@@ -15052,7 +17562,7 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Note ID or full URL (preserves xsec_token for access)"
+        "help": "Full Xiaohongshu note URL with xsec_token"
       },
       {
         "name": "limit",
@@ -15081,7 +17591,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/comments.js",
     "sourceFile": "xiaohongshu/comments.js",
-    "navigateBefore": "https://www.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15108,7 +17618,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/creator-note-detail.js",
     "sourceFile": "xiaohongshu/creator-note-detail.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15140,7 +17650,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/creator-notes-summary.js",
     "sourceFile": "xiaohongshu/creator-notes-summary.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15177,7 +17687,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/creator-notes-summary.js",
     "sourceFile": "xiaohongshu/creator-notes-summary.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15194,7 +17704,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/creator-profile.js",
     "sourceFile": "xiaohongshu/creator-profile.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15224,7 +17734,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/creator-stats.js",
     "sourceFile": "xiaohongshu/creator-stats.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15239,7 +17749,7 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Note ID, full URL, or short link"
+        "help": "Full Xiaohongshu note URL with xsec_token, or xhslink short link"
       },
       {
         "name": "output",
@@ -15258,7 +17768,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/download.js",
     "sourceFile": "xiaohongshu/download.js",
-    "navigateBefore": "https://www.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15301,7 +17811,7 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "Note ID or full URL (preserves xsec_token for access)"
+        "help": "Full Xiaohongshu note URL with xsec_token"
       }
     ],
     "columns": [
@@ -15311,7 +17821,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/note.js",
     "sourceFile": "xiaohongshu/note.js",
-    "navigateBefore": "https://www.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15397,7 +17907,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/publish.js",
     "sourceFile": "xiaohongshu/publish.js",
-    "navigateBefore": "https://creator.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15433,7 +17943,7 @@
     "type": "js",
     "modulePath": "xiaohongshu/search.js",
     "sourceFile": "xiaohongshu/search.js",
-    "navigateBefore": "https://www.xiaohongshu.com"
+    "navigateBefore": false
   },
   {
     "site": "xiaohongshu",
@@ -15468,14 +17978,48 @@
     "type": "js",
     "modulePath": "xiaohongshu/user.js",
     "sourceFile": "xiaohongshu/user.js",
-    "navigateBefore": "https://www.xiaohongshu.com"
+    "navigateBefore": false
+  },
+  {
+    "site": "xiaoyuzhou",
+    "name": "download",
+    "description": "Download Xiaoyuzhou episode audio",
+    "domain": "www.xiaoyuzhoufm.com",
+    "strategy": "local",
+    "browser": false,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Episode ID (eid from podcast-episodes output)"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "./xiaoyuzhou-downloads",
+        "required": false,
+        "help": "Output directory"
+      }
+    ],
+    "columns": [
+      "title",
+      "podcast",
+      "status",
+      "size",
+      "file"
+    ],
+    "type": "js",
+    "modulePath": "xiaoyuzhou/download.js",
+    "sourceFile": "xiaoyuzhou/download.js"
   },
   {
     "site": "xiaoyuzhou",
     "name": "episode",
     "description": "View details of a Xiaoyuzhou podcast episode",
     "domain": "www.xiaoyuzhoufm.com",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -15504,7 +18048,7 @@
     "name": "podcast",
     "description": "View a Xiaoyuzhou podcast profile",
     "domain": "www.xiaoyuzhoufm.com",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -15530,9 +18074,9 @@
   {
     "site": "xiaoyuzhou",
     "name": "podcast-episodes",
-    "description": "List recent episodes of a Xiaoyuzhou podcast (up to 15, SSR limit)",
+    "description": "List episodes of a Xiaoyuzhou podcast",
     "domain": "www.xiaoyuzhoufm.com",
-    "strategy": "public",
+    "strategy": "local",
     "browser": false,
     "args": [
       {
@@ -15545,9 +18089,9 @@
       {
         "name": "limit",
         "type": "int",
-        "default": 15,
+        "default": 20,
         "required": false,
-        "help": "Max episodes to show (up to 15, SSR limit)"
+        "help": "Max episodes to show"
       }
     ],
     "columns": [
@@ -15560,6 +18104,55 @@
     "type": "js",
     "modulePath": "xiaoyuzhou/podcast-episodes.js",
     "sourceFile": "xiaoyuzhou/podcast-episodes.js"
+  },
+  {
+    "site": "xiaoyuzhou",
+    "name": "transcript",
+    "description": "Download Xiaoyuzhou transcript as JSON and text (requires local credentials)",
+    "domain": "www.xiaoyuzhoufm.com",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Episode ID (eid from podcast-episodes output)"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "./xiaoyuzhou-transcripts",
+        "required": false,
+        "help": "Output directory"
+      },
+      {
+        "name": "json",
+        "type": "boolean",
+        "default": true,
+        "required": false,
+        "help": "Save transcript JSON file"
+      },
+      {
+        "name": "text",
+        "type": "boolean",
+        "default": true,
+        "required": false,
+        "help": "Save extracted transcript text file"
+      }
+    ],
+    "columns": [
+      "title",
+      "podcast",
+      "status",
+      "segments",
+      "json_file",
+      "text_file"
+    ],
+    "type": "js",
+    "modulePath": "xiaoyuzhou/transcript.js",
+    "sourceFile": "xiaoyuzhou/transcript.js"
   },
   {
     "site": "xueqiu",
@@ -16635,6 +19228,127 @@
   },
   {
     "site": "youtube",
+    "name": "feed",
+    "description": "Get YouTube homepage recommended videos",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 20,
+        "required": false,
+        "help": "Max videos to return (default 20, max 100)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "channel",
+      "views",
+      "duration",
+      "published",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/feed.js",
+    "sourceFile": "youtube/feed.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "history",
+    "description": "Get YouTube watch history",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Max videos to return (default 30, max 200)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "channel",
+      "views",
+      "duration",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/history.js",
+    "sourceFile": "youtube/history.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "like",
+    "description": "Like a YouTube video",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "YouTube video URL or video ID"
+      }
+    ],
+    "columns": [
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "youtube/like.js",
+    "sourceFile": "youtube/like.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "playlist",
+    "description": "Get YouTube playlist info and video list",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "id",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Playlist URL or playlist ID (PLxxxxxx)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Max videos to return (default 50, max 200)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "channel",
+      "duration",
+      "views",
+      "published",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/playlist.js",
+    "sourceFile": "youtube/playlist.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
     "name": "search",
     "description": "Search YouTube videos",
     "domain": "www.youtube.com",
@@ -16693,6 +19407,59 @@
   },
   {
     "site": "youtube",
+    "name": "subscribe",
+    "description": "Subscribe to a YouTube channel",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "channel",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Channel ID (UCxxxx) or handle (@name)"
+      }
+    ],
+    "columns": [
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "youtube/subscribe.js",
+    "sourceFile": "youtube/subscribe.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "subscriptions",
+    "description": "List subscribed YouTube channels",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Max channels to return (default 50)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "name",
+      "handle",
+      "subscribers",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/subscriptions.js",
+    "sourceFile": "youtube/subscriptions.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
     "name": "transcript",
     "description": "Get YouTube video transcript/subtitles",
     "domain": "www.youtube.com",
@@ -16727,6 +19494,56 @@
   },
   {
     "site": "youtube",
+    "name": "unlike",
+    "description": "Remove like from a YouTube video",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "YouTube video URL or video ID"
+      }
+    ],
+    "columns": [
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "youtube/unlike.js",
+    "sourceFile": "youtube/unlike.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "unsubscribe",
+    "description": "Unsubscribe from a YouTube channel",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "channel",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Channel ID (UCxxxx) or handle (@name)"
+      }
+    ],
+    "columns": [
+      "status",
+      "message"
+    ],
+    "type": "js",
+    "modulePath": "youtube/unsubscribe.js",
+    "sourceFile": "youtube/unsubscribe.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
     "name": "video",
     "description": "Get YouTube video metadata (title, views, description, etc.)",
     "domain": "www.youtube.com",
@@ -16748,6 +19565,36 @@
     "type": "js",
     "modulePath": "youtube/video.js",
     "sourceFile": "youtube/video.js",
+    "navigateBefore": "https://www.youtube.com"
+  },
+  {
+    "site": "youtube",
+    "name": "watch-later",
+    "description": "Get your YouTube Watch Later queue",
+    "domain": "www.youtube.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 50,
+        "required": false,
+        "help": "Max videos to return (default 50, max 200)"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "channel",
+      "duration",
+      "views",
+      "published",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "youtube/watch-later.js",
+    "sourceFile": "youtube/watch-later.js",
     "navigateBefore": "https://www.youtube.com"
   },
   {
@@ -17286,6 +20133,12 @@
         "required": true,
         "positional": true,
         "help": "Topic ID"
+      },
+      {
+        "name": "group_id",
+        "type": "str",
+        "required": false,
+        "help": "Group ID (optional; defaults to active group in Chrome)"
       },
       {
         "name": "comment_limit",

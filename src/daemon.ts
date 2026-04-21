@@ -24,6 +24,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { EXIT_CODES } from './errors.js';
 import { log } from './logger.js';
+import { PKG_VERSION } from './version.js';
 
 const PORT = parseInt(process.env.OPENCLI_DAEMON_PORT ?? String(DEFAULT_DAEMON_PORT), 10);
 
@@ -31,6 +32,7 @@ const PORT = parseInt(process.env.OPENCLI_DAEMON_PORT ?? String(DEFAULT_DAEMON_P
 
 let extensionWs: WebSocket | null = null;
 let extensionVersion: string | null = null;
+let extensionCompatRange: string | null = null;
 const pending = new Map<string, {
   resolve: (data: unknown) => void;
   reject: (error: Error) => void;
@@ -122,8 +124,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       ok: true,
       pid: process.pid,
       uptime,
+      daemonVersion: PKG_VERSION,
       extensionConnected: extensionWs?.readyState === WebSocket.OPEN,
       extensionVersion,
+      extensionCompatRange,
       pending: pending.size,
       memoryMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
       port: PORT,
@@ -169,6 +173,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const timeoutMs = typeof body.timeout === 'number' && body.timeout > 0
         ? body.timeout * 1000
         : 120000;
+      if (pending.has(body.id)) {
+        jsonResponse(res, 409, {
+          id: body.id,
+          ok: false,
+          error: 'Duplicate command id already pending; retry',
+        });
+        return;
+      }
       const result = await new Promise<unknown>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(body.id);
@@ -211,6 +223,7 @@ wss.on('connection', (ws: WebSocket) => {
   log.info('[daemon] Extension connected');
   extensionWs = ws;
   extensionVersion = null; // cleared until hello message arrives
+  extensionCompatRange = null;
 
   // ── Heartbeat: ping every 15s, close if 2 pongs missed ──
   let missedPongs = 0;
@@ -240,6 +253,7 @@ wss.on('connection', (ws: WebSocket) => {
       // Handle hello message from extension (version handshake)
       if (msg.type === 'hello') {
         extensionVersion = typeof msg.version === 'string' ? msg.version : null;
+        extensionCompatRange = typeof msg.compatRange === 'string' ? msg.compatRange : null;
         return;
       }
 
@@ -270,6 +284,7 @@ wss.on('connection', (ws: WebSocket) => {
     if (extensionWs === ws) {
       extensionWs = null;
       extensionVersion = null;
+      extensionCompatRange = null;
       // Reject all pending requests since the extension is gone
       for (const [id, p] of pending) {
         clearTimeout(p.timer);

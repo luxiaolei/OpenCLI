@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
@@ -14,22 +15,168 @@ import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
 import { type CliCommand, fullName, getRegistry, strategyLabel } from './registry.js';
 import { serializeCommand, formatArgSummary } from './serialization.js';
 import { render as renderOutput } from './output.js';
-import { getBrowserFactory, browserSession } from './runtime.js';
 import { PKG_VERSION } from './version.js';
 import { printCompletionScript } from './completion.js';
 import { loadExternalClis, executeExternalCli, installExternalCli, registerExternalCli, isBinaryInstalled } from './external.js';
 import { registerAllCommands } from './commanderAdapter.js';
-import { EXIT_CODES, getErrorMessage } from './errors.js';
-import { daemonStop } from './commands/daemon.js';
+import { EXIT_CODES, getErrorMessage, BrowserConnectError } from './errors.js';
+import { TargetError } from './browser/target-errors.js';
+import { resolveTargetJs, getTextResolvedJs, getValueResolvedJs, getAttributesResolvedJs, selectResolvedJs, isAutocompleteResolvedJs } from './browser/target-resolver.js';
+import { daemonStatus, daemonStop } from './commands/daemon.js';
 import { log } from './logger.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
+const DEFAULT_BROWSER_WORKSPACE = 'browser:default';
+const BROWSER_TAB_OPTION_DESCRIPTION = 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"';
+
+type BrowserNetworkItem = {
+  url: string;
+  method: string;
+  status: number;
+  size: number;
+  ct: string;
+  body: unknown;
+};
+
+type BrowserTargetState = {
+  defaultPage?: string;
+  updatedAt: string;
+};
+
+type BrowserTabSummary = {
+  page?: string;
+};
+
+function getBrowserCacheDir(): string {
+  return process.env.OPENCLI_CACHE_DIR || path.join(os.homedir(), '.opencli', 'cache');
+}
+
+function getBrowserTargetStatePath(scope: string = DEFAULT_BROWSER_WORKSPACE): string {
+  const safeWorkspace = scope.replace(/[^a-zA-Z0-9_-]+/g, '_');
+  return path.join(getBrowserCacheDir(), 'browser-state', `${safeWorkspace}.json`);
+}
+
+function loadBrowserTargetState(scope: string = DEFAULT_BROWSER_WORKSPACE): BrowserTargetState | null {
+  try {
+    const raw = fs.readFileSync(getBrowserTargetStatePath(scope), 'utf-8');
+    const parsed = JSON.parse(raw) as BrowserTargetState | null;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBrowserTargetState(defaultPage?: string, scope: string = DEFAULT_BROWSER_WORKSPACE): void {
+  const target = getBrowserTargetStatePath(scope);
+  if (!defaultPage) {
+    fs.rmSync(target, { force: true });
+    return;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, JSON.stringify({ defaultPage, updatedAt: new Date().toISOString() }), 'utf-8');
+}
+
+function hasBrowserTabTarget(tabs: unknown[], targetPage: string): boolean {
+  return tabs.some((tab) => {
+    return typeof tab === 'object'
+      && tab !== null
+      && 'page' in tab
+      && typeof (tab as BrowserTabSummary).page === 'string'
+      && (tab as BrowserTabSummary).page === targetPage;
+  });
+}
+
+async function resolveBrowserTargetInSession(
+  page: import('./types.js').IPage,
+  targetPage: string,
+  opts: { scope?: string; source: 'explicit' | 'saved' },
+): Promise<string | undefined> {
+  const candidate = targetPage.trim();
+  if (!candidate) return undefined;
+
+  let tabs: unknown[];
+  try {
+    tabs = await page.tabs();
+  } catch (err) {
+    if (opts.source === 'saved') {
+      saveBrowserTargetState(undefined, opts.scope);
+      return undefined;
+    }
+    throw new Error(
+      `Target tab ${candidate} could not be validated in the current browser session. ` +
+      'The Browser Bridge workspace may have restarted; re-run "opencli browser tab list" and choose a current target.',
+      { cause: err },
+    );
+  }
+
+  if (Array.isArray(tabs) && hasBrowserTabTarget(tabs, candidate)) {
+    return candidate;
+  }
+
+  if (opts.source === 'saved') {
+    saveBrowserTargetState(undefined, opts.scope);
+    return undefined;
+  }
+
+  throw new Error(
+    `Target tab ${candidate} is not part of the current browser session. ` +
+    'The Browser Bridge workspace may have restarted; re-run "opencli browser tab list" and choose a current target.',
+  );
+}
+
+async function resolveStoredBrowserTarget(page: import('./types.js').IPage, scope: string = DEFAULT_BROWSER_WORKSPACE): Promise<string | undefined> {
+  const defaultPage = loadBrowserTargetState(scope)?.defaultPage?.trim();
+  if (!defaultPage) return undefined;
+  return resolveBrowserTargetInSession(page, defaultPage, { scope, source: 'saved' });
+}
 
 /** Create a browser page for browser commands. Uses a dedicated browser workspace for session persistence. */
-async function getBrowserPage(): Promise<import('./types.js').IPage> {
+async function getBrowserPage(targetPage?: string): Promise<import('./types.js').IPage> {
   const { BrowserBridge } = await import('./browser/index.js');
   const bridge = new BrowserBridge();
-  return bridge.connect({ timeout: 30, workspace: 'browser:default' });
+  const envTimeout = process.env.OPENCLI_BROWSER_TIMEOUT;
+  const idleTimeout = envTimeout ? parseInt(envTimeout, 10) : undefined;
+  const page = await bridge.connect({
+    timeout: 30,
+    workspace: DEFAULT_BROWSER_WORKSPACE,
+    ...(idleTimeout && idleTimeout > 0 && { idleTimeout }),
+  });
+  const resolvedTargetPage = targetPage
+    ? await resolveBrowserTargetInSession(page, targetPage, { scope: DEFAULT_BROWSER_WORKSPACE, source: 'explicit' })
+    : await resolveStoredBrowserTarget(page, DEFAULT_BROWSER_WORKSPACE);
+  if (resolvedTargetPage) {
+    if (!page.setActivePage) {
+      throw new Error('This browser session does not support explicit tab targeting');
+    }
+    page.setActivePage(resolvedTargetPage);
+  }
+  return page;
+}
+
+function addBrowserTabOption(command: Command): Command {
+  return command.option('--tab <targetId>', BROWSER_TAB_OPTION_DESCRIPTION);
+}
+
+function getBrowserTargetId(command?: Command): string | undefined {
+  if (!command) return undefined;
+  const opts = command.optsWithGlobals ? command.optsWithGlobals() : command.opts();
+  return typeof opts.tab === 'string' && opts.tab.trim() ? opts.tab.trim() : undefined;
+}
+
+function resolveBrowserTabTarget(targetId?: string, opts?: { tab?: string }): string | undefined {
+  if (typeof targetId === 'string' && targetId.trim()) return targetId.trim();
+  if (typeof opts?.tab === 'string' && opts.tab.trim()) return opts.tab.trim();
+  return undefined;
+}
+
+function parsePositiveIntOption(val: string | undefined, label: string, fallback: number): number {
+  if (val === undefined) return fallback;
+  const parsed = parseInt(val, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    console.error(`[cli] Invalid ${label}="${val}", using default ${fallback}`);
+    return fallback;
+  }
+  return parsed;
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
@@ -144,145 +291,6 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       process.exitCode = r.ok ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
     });
 
-  // ── Built-in: explore / synthesize / generate / cascade ───────────────────
-
-  program
-    .command('explore')
-    .alias('probe')
-    .description('Explore a website: discover APIs, stores, and recommend strategies')
-    .argument('<url>')
-    .option('--site <name>')
-    .option('--goal <text>')
-    .option('--wait <s>', '', '3')
-    .option('--auto', 'Enable interactive fuzzing')
-    .option('--click <labels>', 'Comma-separated labels to click before fuzzing')
-    .option('-v, --verbose', 'Debug output')
-    .action(async (url: string, opts: {
-      site?: string;
-      goal?: string;
-      wait: string;
-      auto?: boolean;
-      click?: string;
-      verbose?: boolean;
-    }) => {
-      applyVerbose(opts);
-      const { exploreUrl, renderExploreSummary } = await import('./explore.js');
-      const clickLabels = opts.click
-        ? opts.click.split(',').map((s: string) => s.trim())
-        : undefined;
-      const workspace = `explore:${inferHost(url, opts.site)}`;
-      const result = await exploreUrl(url, {
-        BrowserFactory: getBrowserFactory(),
-        site: opts.site,
-        goal: opts.goal,
-        waitSeconds: parseFloat(opts.wait),
-        auto: opts.auto,
-        clickLabels,
-        workspace,
-      });
-      console.log(renderExploreSummary(result));
-    });
-
-  program
-    .command('synthesize')
-    .description('Synthesize CLIs from explore')
-    .argument('<target>')
-    .option('--top <n>', '', '3')
-    .option('-v, --verbose', 'Debug output')
-    .action(async (target, opts) => {
-      applyVerbose(opts);
-      const { synthesizeFromExplore, renderSynthesizeSummary } = await import('./synthesize.js');
-      console.log(renderSynthesizeSummary(synthesizeFromExplore(target, { top: parseInt(opts.top) })));
-    });
-
-  program
-    .command('generate')
-    .description('One-shot: explore → synthesize → verify → register')
-    .argument('<url>')
-    .option('--goal <text>')
-    .option('--site <name>')
-    .option('--format <fmt>', 'Output format: table, json', 'table')
-    .option('--no-register', 'Verify the generated adapter without registering it')
-    .option('-v, --verbose', 'Debug output')
-    .action(async (url: string, opts: {
-      goal?: string;
-      site?: string;
-      format?: string;
-      register?: boolean;
-      verbose?: boolean;
-    }) => {
-      applyVerbose(opts);
-      const { generateVerifiedFromUrl, renderGenerateVerifiedSummary } = await import('./generate-verified.js');
-      const workspace = `generate:${inferHost(url, opts.site)}`;
-      const r = await generateVerifiedFromUrl({
-        url,
-        BrowserFactory: getBrowserFactory(),
-        goal: opts.goal,
-        site: opts.site,
-        workspace,
-        noRegister: opts.register === false,
-      });
-      if (opts.format === 'json') console.log(JSON.stringify(r, null, 2));
-      else console.log(renderGenerateVerifiedSummary(r));
-      process.exitCode = r.status === 'success' ? EXIT_CODES.SUCCESS : EXIT_CODES.GENERIC_ERROR;
-    });
-
-  // ── Built-in: record ─────────────────────────────────────────────────────
-
-  program
-    .command('record')
-    .description('Record API calls from a live browser session → generate YAML candidates')
-    .argument('<url>', 'URL to open and record')
-    .option('--site <name>', 'Site name (inferred from URL if omitted)')
-    .option('--out <dir>', 'Output directory for candidates')
-    .option('--poll <ms>', 'Poll interval in milliseconds', '2000')
-    .option('--timeout <ms>', 'Auto-stop after N milliseconds (default: 60000)', '60000')
-    .option('-v, --verbose', 'Debug output')
-    .action(async (url: string, opts: {
-      site?: string;
-      out?: string;
-      poll: string;
-      timeout: string;
-      verbose?: boolean;
-    }) => {
-      applyVerbose(opts);
-      const { recordSession, renderRecordSummary } = await import('./record.js');
-      const result = await recordSession({
-        BrowserFactory: getBrowserFactory(),
-        url,
-        site: opts.site,
-        outDir: opts.out,
-        pollMs: parseInt(opts.poll, 10),
-        timeoutMs: parseInt(opts.timeout, 10),
-      });
-      console.log(renderRecordSummary(result));
-      process.exitCode = result.candidateCount > 0 ? EXIT_CODES.SUCCESS : EXIT_CODES.EMPTY_RESULT;
-    });
-
-  program
-    .command('cascade')
-    .description('Strategy cascade: find simplest working strategy')
-    .argument('<url>')
-    .option('--site <name>')
-    .option('-v, --verbose', 'Debug output')
-    .action(async (url: string, opts: {
-      site?: string;
-      verbose?: boolean;
-    }) => {
-      applyVerbose(opts);
-      const { cascadeProbe, renderCascadeResult } = await import('./cascade.js');
-      const workspace = `cascade:${inferHost(url, opts.site)}`;
-      const result = await browserSession(getBrowserFactory(), async (page) => {
-        try {
-          const siteUrl = new URL(url);
-          await page.goto(`${siteUrl.protocol}//${siteUrl.host}`);
-          await page.wait(2);
-        } catch {}
-        return cascadeProbe(page, url);
-      }, { workspace });
-      console.log(renderCascadeResult(result));
-    });
-
   // ── Built-in: browser (browser control for Claude Code skill) ───────────────
   //
   // Make websites accessible for AI agents.
@@ -292,52 +300,140 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
     .command('browser')
     .description('Browser control — navigate, click, type, extract, wait (no LLM needed)');
 
+  /** Resolve a ref/CSS target via the unified resolver, throwing TargetError on failure. */
+  async function resolveRef(page: Awaited<ReturnType<typeof getBrowserPage>>, ref: string): Promise<void> {
+    const resolution = await page.evaluate(resolveTargetJs(ref)) as
+      | { ok: true }
+      | { ok: false; code: string; message: string; hint: string; candidates?: string[] };
+    if (!resolution.ok) {
+      throw new TargetError(resolution as { ok: false; code: 'not_found' | 'ambiguous' | 'stale_ref'; message: string; hint: string; candidates?: string[] });
+    }
+  }
+
   /** Wrap browser actions with error handling and optional --json output */
   function browserAction(fn: (page: Awaited<ReturnType<typeof getBrowserPage>>, ...args: any[]) => Promise<unknown>) {
     return async (...args: any[]) => {
       try {
-        const page = await getBrowserPage();
+        const command = args.at(-1) instanceof Command ? args.at(-1) as Command : undefined;
+        const targetPage = getBrowserTargetId(command);
+        const page = await getBrowserPage(targetPage);
         await fn(page, ...args);
       } catch (err) {
-        const msg = getErrorMessage(err);
-        if (msg.includes('Extension not connected') || msg.includes('Daemon')) {
-          log.error(`Browser not connected. Run 'opencli doctor' to diagnose.`);
-        } else if (msg.includes('attach failed') || msg.includes('chrome-extension://')) {
-          log.error(`Browser attach failed — another extension may be interfering. Try disabling 1Password.`);
+        if (err instanceof BrowserConnectError) {
+          log.error(err.message);
+          if (err.hint) log.error(`Hint: ${err.hint}`);
+        } else if (err instanceof TargetError) {
+          log.error(`[${err.code}] ${err.message}`);
+          if (err.hint) log.error(`Hint: ${err.hint}`);
+          if (err.candidates?.length) {
+            log.error('Candidates:');
+            err.candidates.forEach((c, i) => log.error(`  ${i + 1}. ${c}`));
+          }
         } else {
-          log.error(msg);
+          const msg = getErrorMessage(err);
+          if (msg.includes('attach failed') || msg.includes('chrome-extension://')) {
+            log.error(`Browser attach failed — another extension may be interfering. Try disabling 1Password.`);
+          } else {
+            log.error(msg);
+          }
         }
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
       }
     };
   }
 
+  const browserTab = browser
+    .command('tab')
+    .description('Tab management — list, create, and close tabs in the automation window');
+
+  browserTab.command('list')
+    .description('List tabs in the automation window with target IDs')
+    .action(browserAction(async (page) => {
+      const tabs = await page.tabs();
+      console.log(JSON.stringify(tabs, null, 2));
+    }));
+
+  browserTab.command('new')
+    .argument('[url]', 'Optional URL to open in the new tab')
+    .description('Create a new tab and print its target ID')
+    .action(browserAction(async (page, url?: string) => {
+      if (!page.newTab) {
+        throw new Error('This browser session does not support creating tabs');
+      }
+      const createdPage = await page.newTab(url);
+      console.log(JSON.stringify({
+        page: createdPage,
+        url: url ?? null,
+      }, null, 2));
+    }));
+
+  addBrowserTabOption(browserTab.command('select')
+    .argument('[targetId]', 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"')
+    .description('Select a tab by target ID and make it the default browser tab'))
+    .action(browserAction(async (page, targetId?: string, opts?: { tab?: string }) => {
+      const resolvedTarget = resolveBrowserTabTarget(targetId, opts);
+      if (!resolvedTarget) {
+        throw new Error('Target tab required. Pass it as an argument or --tab <targetId>.');
+      }
+      await page.selectTab(resolvedTarget);
+      saveBrowserTargetState(resolvedTarget, DEFAULT_BROWSER_WORKSPACE);
+      console.log(JSON.stringify({ selected: resolvedTarget }, null, 2));
+    }));
+
+  addBrowserTabOption(browserTab.command('close')
+    .argument('[targetId]', 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"')
+    .description('Close a tab by target ID'))
+    .action(browserAction(async (page, targetId?: string, opts?: { tab?: string }) => {
+      const resolvedTarget = resolveBrowserTabTarget(targetId, opts);
+      if (!page.closeTab) {
+        throw new Error('This browser session does not support closing tabs');
+      }
+      if (!resolvedTarget) {
+        throw new Error('Target tab required. Pass it as an argument or --tab <targetId>.');
+      }
+      const validatedTarget = await resolveBrowserTargetInSession(page, resolvedTarget, {
+        scope: DEFAULT_BROWSER_WORKSPACE,
+        source: 'explicit',
+      });
+      if (!validatedTarget) {
+        throw new Error(`Target tab ${resolvedTarget} is not part of the current browser session.`);
+      }
+      await page.closeTab(validatedTarget);
+      if (loadBrowserTargetState(DEFAULT_BROWSER_WORKSPACE)?.defaultPage === validatedTarget) {
+        saveBrowserTargetState(undefined, DEFAULT_BROWSER_WORKSPACE);
+      }
+      console.log(JSON.stringify({ closed: validatedTarget }, null, 2));
+    }));
+
   // ── Navigation ──
 
   /** Network interceptor JS — injected on every open/navigate to capture fetch/XHR */
   const NETWORK_INTERCEPTOR_JS = `(function(){if(window.__opencli_net)return;window.__opencli_net=[];var M=200,B=50000,F=window.fetch;window.fetch=async function(){var r=await F.apply(this,arguments);try{var ct=r.headers.get('content-type')||'';if(ct.includes('json')||ct.includes('text')){var c=r.clone(),t=await c.text();if(window.__opencli_net.length<M){var b=null;if(t.length<=B)try{b=JSON.parse(t)}catch(e){b=t}window.__opencli_net.push({url:r.url||(arguments[0]&&arguments[0].url)||String(arguments[0]),method:(arguments[1]&&arguments[1].method)||'GET',status:r.status,size:t.length,ct:ct,body:b})}}}catch(e){}return r};var X=XMLHttpRequest.prototype,O=X.open,S=X.send;X.open=function(m,u){this._om=m;this._ou=u;return O.apply(this,arguments)};X.send=function(){var x=this;x.addEventListener('load',function(){try{var ct=x.getResponseHeader('content-type')||'';if((ct.includes('json')||ct.includes('text'))&&window.__opencli_net.length<M){var t=x.responseText,b=null;if(t&&t.length<=B)try{b=JSON.parse(t)}catch(e){b=t}window.__opencli_net.push({url:x._ou,method:x._om||'GET',status:x.status,size:t?t.length:0,ct:ct,body:b})}}catch(e){}});return S.apply(this,arguments)}})()`;
 
-  browser.command('open').argument('<url>').description('Open URL in automation window')
+  addBrowserTabOption(browser.command('open').argument('<url>').description('Open URL in automation window'))
     .action(browserAction(async (page, url) => {
       // Start session-level capture before navigation (catches initial requests)
-      const hasSessionCapture = await page.startNetworkCapture?.().then(() => true).catch(() => false);
+      const hasSessionCapture = await page.startNetworkCapture?.() ?? false;
       await page.goto(url);
       await page.wait(2);
       // Fallback: inject JS interceptor when session capture is unavailable
       if (!hasSessionCapture) {
         try { await page.evaluate(NETWORK_INTERCEPTOR_JS); } catch { /* non-fatal */ }
       }
-      console.log(`Navigated to: ${await page.getCurrentUrl?.() ?? url}`);
+      console.log(JSON.stringify({
+        url: await page.getCurrentUrl?.() ?? url,
+        ...(page.getActivePage?.() ? { page: page.getActivePage?.() } : {}),
+      }, null, 2));
     }));
 
-  browser.command('back').description('Go back in browser history')
+  addBrowserTabOption(browser.command('back').description('Go back in browser history'))
     .action(browserAction(async (page) => {
       await page.evaluate('history.back()');
       await page.wait(2);
       console.log('Navigated back');
     }));
 
-  browser.command('scroll').argument('<direction>', 'up or down').option('--amount <pixels>', 'Pixels to scroll', '500')
+  addBrowserTabOption(browser.command('scroll').argument('<direction>', 'up or down').option('--amount <pixels>', 'Pixels to scroll', '500'))
     .description('Scroll page')
     .action(browserAction(async (page, direction, opts) => {
       if (direction !== 'up' && direction !== 'down') {
@@ -351,7 +447,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   // ── Inspect ──
 
-  browser.command('state').description('Page state: URL, title, interactive elements with [N] indices')
+  addBrowserTabOption(browser.command('state').description('Page state: URL, title, interactive elements with [N] indices'))
     .action(browserAction(async (page) => {
       const snapshot = await page.snapshot({ viewportExpand: 2000 });
       const url = await page.getCurrentUrl?.() ?? '';
@@ -359,7 +455,13 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       console.log(typeof snapshot === 'string' ? snapshot : JSON.stringify(snapshot, null, 2));
     }));
 
-  browser.command('screenshot').argument('[path]', 'Save to file (base64 if omitted)')
+  addBrowserTabOption(browser.command('frames').description('List cross-origin iframe targets in snapshot order'))
+    .action(browserAction(async (page) => {
+      const frames = await page.frames?.() ?? [];
+      console.log(JSON.stringify(frames, null, 2));
+    }));
+
+  addBrowserTabOption(browser.command('screenshot').argument('[path]', 'Save to file (base64 if omitted)'))
     .description('Take screenshot')
     .action(browserAction(async (page, path) => {
       if (path) {
@@ -374,66 +476,61 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   const get = browser.command('get').description('Get page properties');
 
-  get.command('title').description('Page title')
+  addBrowserTabOption(get.command('title').description('Page title'))
     .action(browserAction(async (page) => {
       console.log(await page.evaluate('document.title'));
     }));
 
-  get.command('url').description('Current page URL')
+  addBrowserTabOption(get.command('url').description('Current page URL'))
     .action(browserAction(async (page) => {
       console.log(await page.getCurrentUrl?.() ?? await page.evaluate('location.href'));
     }));
 
-  get.command('text').argument('<index>', 'Element index').description('Element text content')
+  addBrowserTabOption(get.command('text').argument('<index>', 'Element index').description('Element text content'))
     .action(browserAction(async (page, index) => {
-      const text = await page.evaluate(`((idx) => document.querySelector('[data-opencli-ref="' + idx + '"]')?.textContent?.trim())(${JSON.stringify(String(index))})`);
+      await resolveRef(page, String(index));
+      const text = await page.evaluate(getTextResolvedJs());
       console.log(text ?? '(empty)');
     }));
 
-  get.command('value').argument('<index>', 'Element index').description('Input/textarea value')
+  addBrowserTabOption(get.command('value').argument('<index>', 'Element index').description('Input/textarea value'))
     .action(browserAction(async (page, index) => {
-      const val = await page.evaluate(`((idx) => document.querySelector('[data-opencli-ref="' + idx + '"]')?.value)(${JSON.stringify(String(index))})`);
+      await resolveRef(page, String(index));
+      const val = await page.evaluate(getValueResolvedJs());
       console.log(val ?? '(empty)');
     }));
 
-  get.command('html').option('--selector <css>', 'CSS selector scope').description('Page HTML (or scoped)')
+  addBrowserTabOption(get.command('html').option('--selector <css>', 'CSS selector scope').description('Page HTML (or scoped)'))
     .action(browserAction(async (page, opts) => {
       const sel = opts.selector ? JSON.stringify(opts.selector) : 'null';
       const html = await page.evaluate(`(${sel} ? document.querySelector(${sel})?.outerHTML : document.documentElement.outerHTML)?.slice(0, 50000)`);
       console.log(html ?? '(empty)');
     }));
 
-  get.command('attributes').argument('<index>', 'Element index').description('Element attributes')
+  addBrowserTabOption(get.command('attributes').argument('<index>', 'Element index').description('Element attributes'))
     .action(browserAction(async (page, index) => {
-      const attrs = await page.evaluate(`((idx) => JSON.stringify(Object.fromEntries([...document.querySelector('[data-opencli-ref="' + idx + '"]')?.attributes].map(a=>[a.name,a.value]))))(${JSON.stringify(String(index))})`);
+      await resolveRef(page, String(index));
+      const attrs = await page.evaluate(getAttributesResolvedJs());
       console.log(attrs ?? '{}');
     }));
 
   // ── Interact ──
 
-  browser.command('click').argument('<index>', 'Element index from state').description('Click element by index')
+  addBrowserTabOption(browser.command('click').argument('<index>', 'Element index from state').description('Click element by index'))
     .action(browserAction(async (page, index) => {
       await page.click(index);
       console.log(`Clicked element [${index}]`);
     }));
 
-  browser.command('type').argument('<index>', 'Element index').argument('<text>', 'Text to type')
+  addBrowserTabOption(browser.command('type').argument('<index>', 'Element index').argument('<text>', 'Text to type'))
     .description('Click element, then type text')
     .action(browserAction(async (page, index, text) => {
       await page.click(index);
       await page.wait(0.3);
       await page.typeText(index, text);
       // Detect autocomplete/combobox fields and wait for dropdown suggestions
-      const isAutocomplete = await page.evaluate(`
-        (() => {
-          const el = document.querySelector('[data-opencli-ref="${index}"]');
-          if (!el) return false;
-          const role = el.getAttribute('role');
-          const ac = el.getAttribute('aria-autocomplete');
-          const list = el.getAttribute('list');
-          return role === 'combobox' || ac === 'list' || ac === 'both' || !!list;
-        })()
-      `);
+      // __resolved is already set by typeText's resolver call
+      const isAutocomplete = await page.evaluate(isAutocompleteResolvedJs());
       if (isAutocomplete) {
         await page.wait(0.4);
         console.log(`Typed "${text}" into autocomplete [${index}] — use state to see suggestions`);
@@ -442,22 +539,11 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       }
     }));
 
-  browser.command('select').argument('<index>', 'Element index of <select>').argument('<option>', 'Option text')
+  addBrowserTabOption(browser.command('select').argument('<index>', 'Element index of <select>').argument('<option>', 'Option text'))
     .description('Select dropdown option')
     .action(browserAction(async (page, index, option) => {
-      const result = await page.evaluate(`
-        (function() {
-          var sel = document.querySelector('[data-opencli-ref="${index}"]');
-          if (!sel || sel.tagName !== 'SELECT') return { error: 'Not a <select>' };
-          var match = Array.from(sel.options).find(o => o.text.trim() === ${JSON.stringify(option)} || o.value === ${JSON.stringify(option)});
-          if (!match) return { error: 'Option not found', available: Array.from(sel.options).map(o => o.text.trim()) };
-          var setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
-          if (setter) setter.call(sel, match.value); else sel.value = match.value;
-          sel.dispatchEvent(new Event('input', {bubbles:true}));
-          sel.dispatchEvent(new Event('change', {bubbles:true}));
-          return { selected: match.text };
-        })()
-      `) as { error?: string; selected?: string; available?: string[] } | null;
+      await resolveRef(page, String(index));
+      const result = await page.evaluate(selectResolvedJs(option)) as { error?: string; selected?: string; available?: string[] } | null;
       if (result?.error) {
         console.error(`Error: ${result.error}${result.available ? ` — Available: ${result.available.join(', ')}` : ''}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -466,7 +552,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       }
     }));
 
-  browser.command('keys').argument('<key>', 'Key to press (Enter, Escape, Tab, Control+a)')
+  addBrowserTabOption(browser.command('keys').argument('<key>', 'Key to press (Enter, Escape, Tab, Control+a)'))
     .description('Press keyboard key')
     .action(browserAction(async (page, key) => {
       await page.pressKey(key);
@@ -475,7 +561,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   // ── Wait commands ──
 
-  browser.command('wait')
+  addBrowserTabOption(browser.command('wait'))
     .argument('<type>', 'selector, text, or time')
     .argument('[value]', 'CSS selector, text string, or seconds')
     .option('--timeout <ms>', 'Timeout in milliseconds', '10000')
@@ -502,21 +588,40 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 
   // ── Extract ──
 
-  browser.command('eval').argument('<js>', 'JavaScript code').description('Execute JS in page context, return result')
-    .action(browserAction(async (page, js) => {
-      const result = await page.evaluate(js);
+  addBrowserTabOption(
+    browser.command('eval')
+      .argument('<js>', 'JavaScript code')
+      .option('--frame <index>', 'Cross-origin iframe index from "browser frames"')
+      .description('Execute JS in page context, return result'),
+  )
+    .action(browserAction(async (page, js, opts) => {
+      let result: unknown;
+      if (opts.frame !== undefined) {
+        const frameIndex = Number.parseInt(opts.frame, 10);
+        if (!Number.isInteger(frameIndex) || frameIndex < 0) {
+          console.error(`Invalid frame index "${opts.frame}". Use a 0-based index from "browser frames".`);
+          process.exitCode = EXIT_CODES.USAGE_ERROR;
+          return;
+        }
+        if (!page.evaluateInFrame) {
+          throw new Error('This browser session does not support frame-targeted evaluation');
+        }
+        result = await page.evaluateInFrame(js, frameIndex);
+      } else {
+        result = await page.evaluate(js);
+      }
       if (typeof result === 'string') console.log(result);
       else console.log(JSON.stringify(result, null, 2));
     }));
 
   // ── Network (API discovery) ──
 
-  browser.command('network')
+  addBrowserTabOption(browser.command('network'))
     .option('--detail <index>', 'Show full response body of request at index')
     .option('--all', 'Show all requests including static resources')
     .description('Show captured network requests (auto-captured since last open)')
     .action(browserAction(async (page, opts) => {
-      let items: Array<{ url: string; method: string; status: number; size: number; ct: string; body: unknown }> = [];
+      let items: BrowserNetworkItem[] = [];
       if (page.readNetworkCapture) {
         const raw = await page.readNetworkCapture();
         // Normalize daemon/CDP capture entries to __opencli_net shape.
@@ -935,8 +1040,127 @@ cli({
       }
     });
 
+  // ── Built-in: adapter management ─────────────────────────────────────────
+  const adapterCmd = program.command('adapter').description('Manage CLI adapters');
+
+  adapterCmd
+    .command('status')
+    .description('Show which sites have local overrides vs using official baseline')
+    .action(async () => {
+      const os = await import('node:os');
+      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+      const builtinClisDir = BUILTIN_CLIS;
+      try {
+        const userEntries = await fs.promises.readdir(userClisDir, { withFileTypes: true });
+        const userSites = userEntries.filter(e => e.isDirectory()).map(e => e.name).sort();
+        let builtinSites: string[] = [];
+        try {
+          const builtinEntries = await fs.promises.readdir(builtinClisDir, { withFileTypes: true });
+          builtinSites = builtinEntries.filter(e => e.isDirectory()).map(e => e.name).sort();
+        } catch { /* no builtin dir */ }
+
+        if (userSites.length === 0) {
+          console.log('No local adapter overrides. All sites use the official baseline.');
+          return;
+        }
+
+        console.log(`Local overrides in ~/.opencli/clis/ (${userSites.length} sites):\n`);
+        for (const site of userSites) {
+          const isOfficial = builtinSites.includes(site);
+          const label = isOfficial ? 'override' : 'custom';
+          console.log(`  ${site} [${label}]`);
+        }
+        console.log(`\nOfficial baseline: ${builtinSites.length} sites in package`);
+      } catch {
+        console.log('No local adapter overrides. All sites use the official baseline.');
+      }
+    });
+
+  adapterCmd
+    .command('eject')
+    .description('Copy an official adapter to ~/.opencli/clis/ for local editing')
+    .argument('<site>', 'Site name (e.g. twitter, bilibili)')
+    .action(async (site: string) => {
+      const os = await import('node:os');
+      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+      const builtinSiteDir = path.join(BUILTIN_CLIS, site);
+      const userSiteDir = path.join(userClisDir, site);
+
+      try {
+        await fs.promises.access(builtinSiteDir);
+      } catch {
+        console.error(styleText('red', `Error: Site "${site}" not found in official adapters.`));
+        process.exitCode = EXIT_CODES.USAGE_ERROR;
+        return;
+      }
+
+      try {
+        await fs.promises.access(userSiteDir);
+        console.error(styleText('yellow', `Site "${site}" already exists in ~/.opencli/clis/. Use "opencli adapter reset ${site}" first to restore official version.`));
+        process.exitCode = EXIT_CODES.USAGE_ERROR;
+        return;
+      } catch { /* good, doesn't exist yet */ }
+
+      fs.cpSync(builtinSiteDir, userSiteDir, { recursive: true });
+      console.log(styleText('green', `✅ Ejected "${site}" to ~/.opencli/clis/${site}/`));
+      console.log('You can now edit the adapter files. Changes take effect immediately.');
+      console.log(styleText('yellow', 'Note: Official updates to this adapter will overwrite your changes.'));
+    });
+
+  adapterCmd
+    .command('reset')
+    .description('Remove local override and restore official adapter version')
+    .argument('[site]', 'Site name (e.g. twitter, bilibili)')
+    .option('--all', 'Reset all local overrides')
+    .action(async (site: string | undefined, opts: { all?: boolean }) => {
+      const os = await import('node:os');
+      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+
+      if (opts.all) {
+        try {
+          const userEntries = await fs.promises.readdir(userClisDir, { withFileTypes: true });
+          const dirs = userEntries.filter(e => e.isDirectory());
+          if (dirs.length === 0) {
+            console.log('No local sites to reset.');
+            return;
+          }
+          for (const dir of dirs) {
+            fs.rmSync(path.join(userClisDir, dir.name), { recursive: true, force: true });
+          }
+          console.log(styleText('green', `✅ Reset ${dirs.length} site(s). All adapters now use official baseline.`));
+        } catch {
+          console.log('No local sites to reset.');
+        }
+        return;
+      }
+
+      if (!site) {
+        console.error(styleText('red', 'Error: Please specify a site name or use --all.'));
+        process.exitCode = EXIT_CODES.USAGE_ERROR;
+        return;
+      }
+
+      const userSiteDir = path.join(userClisDir, site);
+      try {
+        await fs.promises.access(userSiteDir);
+      } catch {
+        console.error(styleText('yellow', `Site "${site}" has no local override.`));
+        return;
+      }
+
+      const isOfficial = fs.existsSync(path.join(BUILTIN_CLIS, site));
+      fs.rmSync(userSiteDir, { recursive: true, force: true });
+      console.log(styleText('green', isOfficial
+        ? `✅ Reset "${site}". Now using official baseline.`
+        : `✅ Removed custom site "${site}".`));
+    });
+
   // ── Built-in: daemon ──────────────────────────────────────────────────────
   const daemonCmd = program.command('daemon').description('Manage the opencli daemon');
+  daemonCmd
+    .command('status')
+    .description('Show daemon status')
+    .action(async () => { await daemonStatus(); });
   daemonCmd
     .command('stop')
     .description('Stop the daemon')
@@ -1003,10 +1227,14 @@ cli({
     .command('serve')
     .description('Start Anthropic-compatible API proxy for Antigravity')
     .option('--port <port>', 'Server port (default: 8082)', '8082')
+    .option('--timeout <seconds>', 'Maximum time to wait for a reply (default: 120s)')
     .action(async (opts) => {
       // @ts-expect-error JS adapter — no type declarations
       const { startServe } = await import('../clis/antigravity/serve.js');
-      await startServe({ port: parseInt(opts.port) });
+      await startServe({
+        port: parseInt(opts.port, 10),
+        timeout: opts.timeout ? parsePositiveIntOption(opts.timeout, '--timeout', 120) : undefined,
+      });
     });
 
   // ── Dynamic adapter commands ──────────────────────────────────────────────
@@ -1091,8 +1319,3 @@ export function resolveBrowserVerifyInvocation(opts: {
   };
 }
 
-/** Infer a workspace-friendly hostname from a URL, with site override. */
-function inferHost(url: string, site?: string): string {
-  if (site) return site;
-  try { return new URL(url).host; } catch { return 'default'; }
-}

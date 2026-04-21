@@ -1,4 +1,4 @@
-# ChatGPT (Browser)
+# ChatGPT Web
 
 **Mode**: 🔐 Browser · **Domain**: `chatgpt.com`
 
@@ -6,57 +6,54 @@
 
 | Command | Description |
 |---------|-------------|
-| `opencli chatgpt deep-research <prompt>` | Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state |
-| `opencli chatgpt deep-research-status [query]` | Re-open a ChatGPT Deep Research thread and classify only the visible UI state |
-| `opencli chatgpt image-capabilities` | Inspect the currently visible ChatGPT Images workbench capabilities for the logged-in browser session |
-| `opencli chatgpt image-create <prompt>` | Prompt-only image creation MVP for the ChatGPT `/images` workbench |
-| `opencli chatgpt image-edit <prompt>` | Open a target ChatGPT image from `/images` or a specific conversation URL and submit a conservative edit prompt |
+| `opencli chatgpt image <prompt>` | Generate images in ChatGPT web and optionally save them locally |
+| `opencli chatgpt deep-research <prompt>` | Start a ChatGPT Deep Research thread and return a conservative visible UI state |
+| `opencli chatgpt deep-research-status [query]` | Re-open a Deep Research thread and classify the currently visible UI state |
+| `opencli chatgpt image-capabilities` | Inspect the currently visible `/images` workbench capabilities |
+| `opencli chatgpt image-create <prompt>` | Prompt-only image creation flow for the ChatGPT `/images` workbench |
+| `opencli chatgpt image-edit <prompt>` | Open a target ChatGPT image and submit a conservative edit prompt |
 
 ## Usage Examples
 
 ```bash
+# Generate an image and save it locally
+opencli chatgpt image "a cyberpunk city at night"
+
+# Only generate in ChatGPT and print the conversation link
+opencli chatgpt image "a tiny watercolor fox" --sd true
+
 # Start a Deep Research thread and return the thread URL + visible state
 opencli chatgpt deep-research "Research the best browser automation tools for consumer apps"
-
-# Wait longer before returning the visible thread state
-opencli chatgpt deep-research "Compare open-source browser automation stacks" --timeout 45
 
 # Inspect the latest/current Deep Research thread state
 opencli chatgpt deep-research-status
 
-# Inspect a specific thread by URL
-opencli chatgpt deep-research-status "https://chatgpt.com/c/abc123"
-
-# Inspect a thread by title match
-opencli chatgpt deep-research-status "Deep Research 概述" --match contains
-
 # Inspect the currently visible ChatGPT Images workbench capabilities
 opencli chatgpt image-capabilities
 
-# Create an image from the ChatGPT /images workbench (prompt-only MVP)
+# Create an image from the ChatGPT /images workbench
 opencli chatgpt image-create "A simple blue ceramic mug on a plain white background"
 
-# Open the first visible image on /images (preferring My images) and submit an edit prompt
+# Open the first visible image on /images and submit an edit prompt
 opencli chatgpt image-edit "Change the background to a pale beige studio backdrop"
-
-# Target a specific ChatGPT thread and keep iterating on that image
-opencli chatgpt image-edit "Make it warmer and add a soft shadow" --url https://chatgpt.com/c/abc123
-
-# Pick the 3rd visible image entry on /images
-opencli chatgpt image-edit "Turn it into a monochrome poster" --image 3
-
-# In a specific thread, pick the 2nd image in the lightbox when available
-opencli chatgpt image-edit "Make the second version more cinematic" --url https://chatgpt.com/c/abc123 --image 2
 ```
 
 ## Options
+
+### `image`
+
+| Option | Description |
+|--------|-------------|
+| `prompt` | Image prompt to send (required positional argument) |
+| `--op` | Output directory for downloaded images (default: `~/Pictures/chatgpt`) |
+| `--sd` | Skip download and only print the ChatGPT conversation link |
 
 ### `deep-research`
 
 | Option | Description |
 |--------|-------------|
 | `prompt` | Prompt to send (required positional argument) |
-| `--timeout` | Max seconds to wait for `retry_required` before falling back to `submitted` / `pending` (default: `30`) |
+| `--timeout` | Max seconds to wait for a stronger visible state before falling back to `submitted` / `pending` (default: `30`) |
 
 ### `deep-research-status`
 
@@ -69,46 +66,12 @@ opencli chatgpt image-edit "Make the second version more cinematic" --url https:
 
 No options yet. The command only inspects what is visibly available on `/images` in the current logged-in browser session.
 
-#### `image-capabilities` out of scope
-
-This command does **not** currently promise or infer:
-- `model`
-- `quality`
-- `aspect-ratio`
-- `size`
-- `seed`
-- `variant`
-- `download`
-
 ### `image-create`
 
 | Option | Description |
 |--------|-------------|
 | `prompt` | Prompt to send to the ChatGPT `/images` workbench (required positional argument) |
-| `--timeout` | Max seconds to wait for visible result actions before falling back to `submitted` (default: `30`) |
-
-#### `image-create` states
-
-The prompt-only MVP currently returns only:
-- `blocked`
-- `failed`
-- `submitted`
-- `result_visible`
-
-#### `image-create` out of scope
-
-This command does **not** currently promise or expose:
-- `model`
-- `quality`
-- `aspect-ratio`
-- `size`
-- `seed`
-- `variant`
-- `download`
-- `open`
-- `edit`
-- `share`
-- `list`
+| `--timeout` | Max seconds to wait for a visible result signal before falling back to `submitted` (default: `30`) |
 
 ### `image-edit`
 
@@ -119,43 +82,20 @@ This command does **not** currently promise or expose:
 | `--image` | 1-based image index. On `/images` it selects the visible image entry; with `--url` it selects the lightbox image when available (default: `1`) |
 | `--timeout` | Max seconds to wait for a visible edited result signal before falling back to `submitted` (default: `30`) |
 
-#### `image-edit` states
-
-The lightbox-based MVP currently returns only:
-- `blocked`
-- `failed`
-- `submitted`
-- `result_visible`
-
-#### `image-edit` out of scope
-
-This command does **not** currently promise or expose:
-- target-thread selection by title/latest query
-- area selection / masking
-- model
-- quality
-- aspect-ratio
-- size
-- seed
-- variant
-- download
-- open
-- share
-- list
-
 ## Behavior
 
 - These commands drive the **ChatGPT web UI**, not the macOS desktop app.
-- `deep-research` is intentionally conservative in Phase 1: it opens `/deep-research`, injects the prompt, sends it, waits for a stronger visible signal, and then returns only a **visible UI classification**.
+- `image` opens a fresh `chatgpt.com/new` page, submits an image prompt, and can optionally download visible results.
+- `deep-research` is intentionally conservative: it opens `/deep-research`, injects the prompt, sends it, and returns only a **visible UI classification**.
 - `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI.
-- `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities (for example upload affordances, preset cards, task cards, and visible result-card actions).
-- `image-create` is intentionally small in its first cut: it does a capability-first preflight on `/images`, sends a prompt, and only returns a conservative submission/result state.
-- `image-edit` defaults to `/images`, opens the requested visible `Open image` entry (preferring the `My images` section), waits for the lightbox edit composer to become ready, sends the edit prompt, and only returns a conservative submission/result state.
-- `image-edit --url <conversation>` targets a specific ChatGPT thread first, opens the thread image into the lightbox, and can optionally apply `--image <n>` inside the lightbox when multiple images are available.
+- `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities.
+- `image-create` performs a capability-first preflight on `/images`, sends a prompt, and returns a conservative submission/result state.
+- `image-edit` defaults to `/images`, opens the requested visible image entry, waits for the lightbox edit composer to become ready, then sends the edit prompt.
+- For desktop-app commands such as `status`, `new`, `send`, `read`, `ask`, and `model`, see [ChatGPT App](../desktop/chatgpt-app.md).
 
-## Deep Research Phase-1 UI States
+## Deep Research UI States
 
-The browser-backed Deep Research MVP only returns these states:
+The browser-backed Deep Research workflow only returns these visible UI states:
 
 - `landing`
 - `input_ready`
@@ -164,31 +104,17 @@ The browser-backed Deep Research MVP only returns these states:
 - `retry_required`
 - `unknown`
 
-## Explicitly Out of Scope (for now)
+## Caveats
 
-These browser commands do **not** currently promise:
-
-- `running`
-- `completed`
-- `sources`
-- `export`
-- `result_url`
-- `share_url`
+- This adapter depends on the current logged-in browser session and may fail if ChatGPT shows login, challenge, quota, feature-gating, or other blocking UI.
+- DOM or product changes on ChatGPT can break composer detection, thread discovery, lightbox detection, image extraction, or capability inspection.
+- `image-create` / `image-edit` intentionally expose only conservative states in the current MVP and do **not** promise advanced controls like model, quality, aspect ratio, seed, or masking.
+- `image-edit --image <n>` on `/images` means the nth visible image entry, not a semantic match by prompt/title.
 
 ## Prerequisites
 
 - Chrome is running
 - You are already logged into `chatgpt.com`
-- Your account can open `/deep-research`
 - Your account can open `/images`
+- Your account can open `/deep-research` for the research commands
 - [Browser Bridge extension](/guide/browser-bridge) is installed
-
-## Caveats
-
-- This adapter depends on the current logged-in browser session and may fail if ChatGPT shows login, consent, quota, feature-gating, or other blocking UI.
-- The landing hero text on `/deep-research` is not stable; the command does **not** rely on one fixed headline.
-- The current Phase-1 implementation treats `深度研究，点击以重试` / `Deep Research, click to retry` as `retry_required`, distinguishes that from ordinary `pending`, and does not pretend the run is completed/exportable.
-- DOM/product changes on ChatGPT can break composer detection, thread discovery, lightbox detection, state classification, or image capability inspection.
-- `image-edit --image <n>` on `/images` means the nth visible `Open image` entry, not a semantic match by prompt/title.
-- `image-edit --url <conversation> --image <n>` can only select `n` when the thread lightbox exposes multiple images; otherwise only image `1` is available.
-- For desktop-app commands such as `status`, `new`, `send`, `read`, `ask`, and `model`, see [docs/adapters/desktop/chatgpt.md](../desktop/chatgpt.md).
