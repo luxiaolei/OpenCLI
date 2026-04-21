@@ -9107,13 +9107,20 @@
         "default": 20,
         "required": false,
         "help": "Number of results (max 50)"
+      },
+      {
+        "name": "since_days",
+        "type": "int",
+        "required": false,
+        "help": "Only keep rows published within N days"
       }
     ],
     "columns": [
       "rank",
       "content_type",
       "title",
-      "publish_time",
+      "published_at",
+      "detail_status",
       "project_code",
       "budget_or_limit",
       "url"
