@@ -45,19 +45,19 @@ export const askCommand = cli({
         if (!modelResult?.ok) {
             throw new CommandExecutionError(`Could not switch to ${wantModel} model`);
         }
-        if (modelResult.toggled) await page.wait(0.5);
+        if (modelResult?.toggled) await page.wait(0.5);
 
         const thinkResult = await withRetry(() => setFeature(page, 'DeepThink', wantThink));
-        if (!thinkResult?.ok) {
-            throw new CommandExecutionError('Could not toggle DeepThink');
+        if (!thinkResult?.ok && wantThink) {
+            throw new CommandExecutionError('Could not enable DeepThink');
         }
 
         const searchResult = await withRetry(() => setFeature(page, 'Search', wantSearch));
-        if (!searchResult?.ok) {
-            throw new CommandExecutionError('Could not toggle Search');
+        if (!searchResult?.ok && wantSearch) {
+            throw new CommandExecutionError('Could not enable Search');
         }
 
-        if (thinkResult.toggled || searchResult.toggled) await page.wait(0.5);
+        if (thinkResult?.toggled || searchResult?.toggled) await page.wait(0.5);
 
         if (kwargs.file) {
             const baseline = await withRetry(() => getBubbleCount(page));
