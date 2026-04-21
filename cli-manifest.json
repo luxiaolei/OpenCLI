@@ -8727,7 +8727,7 @@
       {
         "name": "path",
         "type": "str",
-        "default": "/Users/xlmini/Downloads/Instagram",
+        "default": "~/Downloads/Instagram",
         "required": false,
         "help": "Download directory"
       }
@@ -16303,7 +16303,9 @@
       "name",
       "text",
       "likes",
-      "url"
+      "url",
+      "has_media",
+      "media_urls"
     ],
     "type": "js",
     "modulePath": "twitter/likes.js",
@@ -16668,7 +16670,9 @@
       "created_at",
       "likes",
       "views",
-      "url"
+      "url",
+      "has_media",
+      "media_urls"
     ],
     "type": "js",
     "modulePath": "twitter/search.js",
@@ -16704,7 +16708,9 @@
       "text",
       "likes",
       "retweets",
-      "url"
+      "url",
+      "has_media",
+      "media_urls"
     ],
     "type": "js",
     "modulePath": "twitter/thread.js",
@@ -16747,7 +16753,9 @@
       "replies",
       "views",
       "created_at",
-      "url"
+      "url",
+      "has_media",
+      "media_urls"
     ],
     "type": "js",
     "modulePath": "twitter/timeline.js",
@@ -16813,7 +16821,9 @@
       "retweets",
       "replies",
       "views",
-      "url"
+      "url",
+      "has_media",
+      "media_urls"
     ],
     "type": "js",
     "modulePath": "twitter/tweets.js",
