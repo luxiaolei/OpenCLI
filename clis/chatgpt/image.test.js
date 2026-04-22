@@ -1,0 +1,201 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@jackwener/opencli/registry', () => ({
+  cli: (definition) => definition,
+  Strategy: { COOKIE: 'cookie' },
+}));
+
+const {
+  mockCreateFunc,
+  mockDownloadFunc,
+} = vi.hoisted(() => ({
+  mockCreateFunc: vi.fn(),
+  mockDownloadFunc: vi.fn(),
+}));
+
+vi.mock('./image-create.js', () => ({
+  imageCreateCommand: {
+    func: mockCreateFunc,
+  },
+}));
+
+vi.mock('./image-download.js', () => ({
+  imageDownloadCommand: {
+    func: mockDownloadFunc,
+  },
+}));
+
+import { imageCommand } from './image.js';
+
+describe('chatgpt/image legacy shorthand', () => {
+  const page = { wait: vi.fn().mockResolvedValue(undefined) };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateFunc.mockResolvedValue([
+      {
+        action: 'create',
+        status: 'result_visible',
+        page_url: 'https://chatgpt.com/c/create123',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'create123',
+      },
+    ]);
+    mockDownloadFunc.mockResolvedValue([
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/chatgpt_123_1.png',
+        link: '🔗 https://chatgpt.com/c/create123',
+      },
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/chatgpt_123_2.png',
+        link: '🔗 https://chatgpt.com/c/create123',
+      },
+    ]);
+  });
+
+  it('routes legacy image generation through the stable image-create plus download chain', async () => {
+    const rows = await imageCommand.func(page, {
+      prompt: 'blue ceramic mug',
+      op: '/tmp/chatgpt',
+    });
+
+    expect(mockCreateFunc).toHaveBeenCalledWith(page, {
+      prompt: 'blue ceramic mug',
+      timeout: '30',
+    });
+    expect(mockDownloadFunc).toHaveBeenCalledWith(page, {
+      url: 'https://chatgpt.com/c/create123',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+    });
+    expect(rows).toEqual([
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/chatgpt_123_1.png',
+        link: '🔗 https://chatgpt.com/c/create123',
+      },
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/chatgpt_123_2.png',
+        link: '🔗 https://chatgpt.com/c/create123',
+      },
+    ]);
+  });
+
+  it('returns the ChatGPT link without downloading when skip-download is enabled', async () => {
+    const rows = await imageCommand.func(page, {
+      prompt: 'tiny watercolor fox',
+      sd: 'true',
+    });
+
+    expect(mockDownloadFunc).not.toHaveBeenCalled();
+    expect(rows).toEqual([
+      {
+        status: '🎨 generated',
+        file: '📁 -',
+        link: '🔗 https://chatgpt.com/c/create123',
+      },
+    ]);
+  });
+
+  it('retries auto-download polling until generated images become visible', async () => {
+    mockCreateFunc.mockResolvedValue([
+      {
+        action: 'create',
+        status: 'submitted',
+        page_url: 'https://chatgpt.com/c/create789',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'create789',
+      },
+    ]);
+    mockDownloadFunc
+      .mockResolvedValueOnce([
+        {
+          status: '⚠️ no-images',
+          file: '📁 -',
+          link: '🔗 https://chatgpt.com/c/create789',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          status: '✅ saved',
+          file: '📁 /tmp/chatgpt/chatgpt_789_1.png',
+          link: '🔗 https://chatgpt.com/c/create789',
+        },
+      ]);
+
+    const rows = await imageCommand.func(page, {
+      prompt: 'studio product shot',
+      op: '/tmp/chatgpt',
+      timeout: '6',
+    });
+
+    expect(mockDownloadFunc).toHaveBeenCalledTimes(2);
+    expect(mockDownloadFunc).toHaveBeenNthCalledWith(1, page, {
+      url: 'https://chatgpt.com/c/create789',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+    });
+    expect(mockDownloadFunc).toHaveBeenNthCalledWith(2, page, {
+      url: 'https://chatgpt.com/c/create789',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+    });
+    expect(rows).toEqual([
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/chatgpt_789_1.png',
+        link: '🔗 https://chatgpt.com/c/create789',
+      },
+    ]);
+  });
+
+  it('falls back to a submitted link when the thread exists but downloadable images are still not visible after polling', async () => {
+    mockCreateFunc.mockResolvedValue([
+      {
+        action: 'create',
+        status: 'submitted',
+        page_url: 'https://chatgpt.com/c/create456',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'create456',
+      },
+    ]);
+    mockDownloadFunc
+      .mockResolvedValueOnce([
+        {
+          status: '⚠️ no-images',
+          file: '📁 -',
+          link: '🔗 https://chatgpt.com/c/create456',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          status: '⚠️ no-images',
+          file: '📁 -',
+          link: '🔗 https://chatgpt.com/c/create456',
+        },
+      ]);
+
+    const rows = await imageCommand.func(page, {
+      prompt: 'studio product shot',
+      timeout: '6',
+    });
+
+    expect(mockDownloadFunc).toHaveBeenCalledTimes(2);
+    expect(rows).toEqual([
+      {
+        status: '⏳ submitted',
+        file: '📁 -',
+        link: '🔗 https://chatgpt.com/c/create456',
+      },
+    ]);
+  });
+});

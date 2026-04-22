@@ -3307,7 +3307,7 @@
   {
     "site": "chatgpt",
     "name": "image",
-    "description": "Generate images with ChatGPT web and save them locally",
+    "description": "Generate images with the ChatGPT /images workbench and optionally save all visible results locally",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,
@@ -3325,6 +3325,13 @@
         "default": "/Users/xlmini/Pictures/chatgpt",
         "required": false,
         "help": "Output directory"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to keep polling the generated thread for downloadable images before falling back to the ChatGPT link"
       },
       {
         "name": "sd",
@@ -3401,8 +3408,62 @@
   },
   {
     "site": "chatgpt",
+    "name": "image-download",
+    "description": "Download one or all visible ChatGPT images from the current page or a specific conversation URL",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT conversation URL containing the image to download"
+      },
+      {
+        "name": "image",
+        "type": "str",
+        "default": "1",
+        "required": false,
+        "help": "1-based visible image index to download (default: 1)"
+      },
+      {
+        "name": "all",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Download all visible images instead of only the selected index"
+      },
+      {
+        "name": "op",
+        "type": "str",
+        "default": "/Users/xlmini/Pictures/chatgpt",
+        "required": false,
+        "help": "Output directory"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Seconds to wait for a visible image before failing (default: 30)"
+      }
+    ],
+    "columns": [
+      "status",
+      "file",
+      "link"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/image-download.js",
+    "sourceFile": "chatgpt/image-download.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "image-edit",
-    "description": "Open a target ChatGPT image from /images or a specific conversation URL and submit a conservative edit prompt",
+    "description": "Open a target ChatGPT image, submit an edit prompt, and optionally wait for visible edited results to download locally",
     "domain": "chatgpt.com",
     "strategy": "cookie",
     "browser": true,
@@ -3428,16 +3489,31 @@
         "help": "1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)"
       },
       {
+        "name": "op",
+        "type": "str",
+        "default": "/Users/xlmini/Pictures/chatgpt",
+        "required": false,
+        "help": "Output directory for downloaded edited images"
+      },
+      {
+        "name": "sd",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Skip download shorthand; only submit the edit and show the ChatGPT thread state"
+      },
+      {
         "name": "timeout",
         "type": "str",
         "default": "30",
         "required": false,
-        "help": "Max seconds to wait for a visible edited result signal before falling back to submitted (default: 30)"
+        "help": "Max seconds to keep polling the edit thread for downloadable results before falling back to the ChatGPT thread state (default: 30)"
       }
     ],
     "columns": [
       "action",
       "status",
+      "file",
       "page_url",
       "conversation_id"
     ],
@@ -3814,6 +3890,47 @@
   },
   {
     "site": "codex",
+    "name": "computer-use",
+    "description": "Open Codex Computer Use, attach it to the current composer, optionally send a prompt, and optionally click an in-app approval card",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Optional prompt to send immediately after Computer Use is attached"
+      },
+      {
+        "name": "approve",
+        "type": "str",
+        "required": false,
+        "help": "Optional approval mode after a prompt is sent: once, always, or cancel"
+      },
+      {
+        "name": "approve-timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Seconds to wait for a delayed approval card when --approve is used (default: 30)"
+      }
+    ],
+    "columns": [
+      "Status",
+      "State",
+      "Prompt",
+      "Approval",
+      "Hint"
+    ],
+    "type": "js",
+    "modulePath": "codex/computer-use.js",
+    "sourceFile": "codex/computer-use.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
     "name": "export",
     "description": "Export the current Codex conversation to a Markdown file",
     "domain": "localhost",
@@ -3856,6 +3973,22 @@
   },
   {
     "site": "codex",
+    "name": "guide",
+    "description": "Show Codex app onboarding, Computer Use permissions, and exact click path guidance",
+    "domain": "localhost",
+    "strategy": "local",
+    "browser": false,
+    "args": [],
+    "columns": [
+      "Step",
+      "Details"
+    ],
+    "type": "js",
+    "modulePath": "codex/guide.js",
+    "sourceFile": "codex/guide.js"
+  },
+  {
+    "site": "codex",
     "name": "history",
     "description": "List recent conversation threads in Codex",
     "domain": "localhost",
@@ -3889,7 +4022,9 @@
     ],
     "columns": [
       "Status",
-      "Model"
+      "Model",
+      "Reasoning",
+      "Hint"
     ],
     "type": "js",
     "modulePath": "codex/model.js",
@@ -3935,6 +4070,32 @@
     "type": "js",
     "modulePath": "codex/send.js",
     "sourceFile": "codex/send.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
+    "name": "settings",
+    "description": "Open Codex settings, optionally jumping straight to a specific section such as computer-use",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "section",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Optional settings section, for example computer-use"
+      }
+    ],
+    "columns": [
+      "Status",
+      "View",
+      "Hint"
+    ],
+    "type": "js",
+    "modulePath": "codex/settings.js",
+    "sourceFile": "codex/settings.js",
     "navigateBefore": true
   },
   {

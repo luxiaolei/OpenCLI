@@ -1,4 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
+import { buildCodexComputerUseHint } from './utils.js';
 export const readCommand = cli({
     site: 'codex',
     name: 'read',
@@ -25,9 +26,12 @@ export const readCommand = cli({
         return document.body.innerText;
       })()
     `);
+        const content = String(historyText || '').trim()
+            ? historyText
+            : buildCodexComputerUseHint('Codex returned an empty thread view.');
         return [
             {
-                Content: historyText,
+                Content: content,
             },
         ];
     },

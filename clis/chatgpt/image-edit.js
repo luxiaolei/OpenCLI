@@ -1,8 +1,11 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import {
   CHATGPT_WEB_DOMAIN,
   extractChatGPTConversationId,
   getChatGPTConversationList,
+  getChatGPTVisibleImageUrls,
   getCurrentChatGPTUrl,
   hasChatGPTImageContext,
   openChatGPTConversation,
@@ -11,6 +14,8 @@ import {
   parseChatGPTPositiveInt,
   readChatGPTImageCapabilities,
 } from './utils.js';
+import { imageDownloadCommand } from './image-download.js';
+import { pollChatGPTImageDownloads } from './image-auto-download.js';
 
 const CHATGPT_IMAGE_EDIT_COMPOSER_SELECTORS = [
   '[data-testid="modal-lightbox-new"] textarea[placeholder*="描述编辑"]',
@@ -50,6 +55,12 @@ function parseChatGPTImageEditIndex(value, fallback = 1) {
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeBooleanFlag(value) {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 }
 
 export function mergeChatGPTImageEditCandidates(preferredItems, fallbackItems) {
@@ -538,7 +549,7 @@ function buildImageEditPromptScript(prompt) {
 
 function normalizeChatGPTImageEditStatus(value) {
   const raw = String(value ?? '').trim().toLowerCase();
-  return new Set(['blocked', 'failed', 'submitted', 'result_visible']).has(raw) ? raw : '';
+  return new Set(['blocked', 'failed', 'submitted', 'result_visible', 'saved']).has(raw) ? raw : '';
 }
 
 function normalizeChatGPTImageResultAction(value) {
@@ -593,6 +604,7 @@ export function buildChatGPTImageEditRow(snapshot, extra = {}) {
     account_tier: normalized.accountTier,
     conversation_id: normalized.conversationId,
   };
+  if (extra.file) row.file = String(extra.file);
   if (extra.reason) row.reason = String(extra.reason);
   if (extra.detail || normalized.detail) row.detail = String(extra.detail || normalized.detail);
   return row;
@@ -779,7 +791,7 @@ export const imageEditInternals = {
 export const imageEditCommand = cli({
   site: 'chatgpt',
   name: 'image-edit',
-  description: 'Open a target ChatGPT image from /images or a specific conversation URL and submit a conservative edit prompt',
+  description: 'Open a target ChatGPT image, submit an edit prompt, and optionally wait for visible edited results to download locally',
   domain: CHATGPT_WEB_DOMAIN,
   strategy: Strategy.COOKIE,
   browser: true,
@@ -790,12 +802,18 @@ export const imageEditCommand = cli({
     { name: 'prompt', required: true, positional: true, help: 'Edit prompt to send for the selected ChatGPT image' },
     { name: 'url', required: false, help: 'Optional ChatGPT conversation URL to target a specific image-edit thread' },
     { name: 'image', required: false, help: '1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)', default: '1' },
-    { name: 'timeout', required: false, help: 'Max seconds to wait for a visible edited result signal before falling back to submitted (default: 30)', default: '30' },
+    { name: 'op', required: false, help: 'Output directory for downloaded edited images', default: path.join(os.homedir(), 'Pictures', 'chatgpt') },
+    { name: 'sd', type: 'boolean', required: false, help: 'Skip download shorthand; only submit the edit and show the ChatGPT thread state', default: false },
+    { name: 'timeout', required: false, help: 'Max seconds to keep polling the edit thread for downloadable results before falling back to the ChatGPT thread state (default: 30)', default: '30' },
   ],
-  columns: ['action', 'status', 'page_url', 'conversation_id'],
+  columns: ['action', 'status', 'file', 'page_url', 'conversation_id'],
   func: async (page, kwargs) => {
     const prompt = String(kwargs.prompt ?? '').trim();
+    const timeoutRaw = String(kwargs.timeout ?? '30').trim() || '30';
     const timeout = parseChatGPTPositiveInt(kwargs.timeout, 30);
+    const outputDir = String(kwargs.op || path.join(os.homedir(), 'Pictures', 'chatgpt')).trim();
+    const skipDownloadRaw = kwargs.sd;
+    const skipDownload = skipDownloadRaw === '' || skipDownloadRaw === true || normalizeBooleanFlag(skipDownloadRaw);
     const targetUrlRaw = String(kwargs.url ?? '').trim();
     const targetUrl = targetUrlRaw ? parseChatGPTConversationUrl(targetUrlRaw) : null;
     const imageIndex = parseChatGPTImageEditIndex(kwargs.image, 1);
@@ -883,6 +901,7 @@ export const imageEditCommand = cli({
       })];
     }
 
+    const beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
     const sendResult = await imageEditInternals.sendChatGPTImageEditPrompt(page, prompt);
     if (!sendResult?.ok) {
       return [imageEditInternals.buildChatGPTImageEditRow(readySnapshot, {
@@ -893,6 +912,28 @@ export const imageEditCommand = cli({
     }
 
     const finalSnapshot = await imageEditInternals.waitForChatGPTImageEditState(page, timeout, readySnapshot);
-    return [imageEditInternals.buildChatGPTImageEditRow(finalSnapshot)];
+    if (skipDownload) {
+      return [imageEditInternals.buildChatGPTImageEditRow(finalSnapshot)];
+    }
+
+    const downloadRows = await pollChatGPTImageDownloads(page, {
+      url: finalSnapshot.pageUrl || await getCurrentChatGPTUrl(page),
+      op: outputDir,
+      timeout: timeoutRaw,
+      downloader: imageDownloadCommand.func,
+      all: true,
+      downloadKwargs: {
+        before_urls: beforeVisibleImageUrls,
+      },
+    });
+    const firstDownloadRow = Array.isArray(downloadRows) ? downloadRows[0] : null;
+    if (!firstDownloadRow || firstDownloadRow.status !== '✅ saved') {
+      return [imageEditInternals.buildChatGPTImageEditRow(finalSnapshot)];
+    }
+
+    return downloadRows.map((row) => imageEditInternals.buildChatGPTImageEditRow(finalSnapshot, {
+      status: 'saved',
+      file: row.file,
+    }));
   },
 });

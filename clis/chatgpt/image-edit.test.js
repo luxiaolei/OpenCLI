@@ -8,7 +8,9 @@ vi.mock('@jackwener/opencli/registry', () => ({
 const {
   mockGetConversationList,
   mockGetCurrentUrl,
+  mockGetVisibleImageUrls,
   mockHasContext,
+  mockImageDownloadFunc,
   mockOpenConversation,
   mockOpenImages,
   mockParseConversationUrl,
@@ -17,7 +19,9 @@ const {
 } = vi.hoisted(() => ({
   mockGetConversationList: vi.fn().mockResolvedValue([]),
   mockGetCurrentUrl: vi.fn().mockResolvedValue('https://chatgpt.com/images'),
+  mockGetVisibleImageUrls: vi.fn().mockResolvedValue(['https://cdn.example.com/original-1.png']),
   mockHasContext: vi.fn(),
+  mockImageDownloadFunc: vi.fn(),
   mockOpenConversation: vi.fn(),
   mockOpenImages: vi.fn(),
   mockParseConversationUrl: vi.fn((value) => {
@@ -36,6 +40,7 @@ vi.mock('./utils.js', () => ({
     return match ? match[1] : '';
   },
   getChatGPTConversationList: mockGetConversationList,
+  getChatGPTVisibleImageUrls: mockGetVisibleImageUrls,
   getCurrentChatGPTUrl: mockGetCurrentUrl,
   hasChatGPTImageContext: mockHasContext,
   openChatGPTConversation: mockOpenConversation,
@@ -43,6 +48,12 @@ vi.mock('./utils.js', () => ({
   parseChatGPTConversationUrl: mockParseConversationUrl,
   parseChatGPTPositiveInt: mockParsePositiveInt,
   readChatGPTImageCapabilities: mockReadCapabilities,
+}));
+
+vi.mock('./image-download.js', () => ({
+  imageDownloadCommand: {
+    func: mockImageDownloadFunc,
+  },
 }));
 
 import {
@@ -59,6 +70,14 @@ describe('chatgpt/image-edit', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockImageDownloadFunc.mockResolvedValue([
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/edit_1.png',
+        link: '🔗 https://chatgpt.com/c/edit123',
+      },
+    ]);
+    mockGetVisibleImageUrls.mockResolvedValue(['https://cdn.example.com/original-1.png']);
     mockReadCapabilities.mockResolvedValue({
       url: 'https://chatgpt.com/images/',
       title: 'ChatGPT 图片 | AI 图片生成器',
@@ -148,7 +167,7 @@ describe('chatgpt/image-edit', () => {
       resultActionLabels: [],
     });
 
-    const result = await imageEditCommand.func(page, { prompt: 'make it beige', image: '3', timeout: '5' });
+    const result = await imageEditCommand.func(page, { prompt: 'make it beige', image: '3', timeout: '5', sd: 'true' });
 
     expect(imageEditInternals.waitForChatGPTImageOpenTarget).toHaveBeenCalledWith(page, 3, 4);
     expect(mockParsePositiveInt).toHaveBeenCalledWith('5', 30);
@@ -190,6 +209,7 @@ describe('chatgpt/image-edit', () => {
       prompt: 'make it beige',
       url: 'https://chatgpt.com/c/thread123',
       image: '2',
+      sd: 'true',
     });
 
     expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/thread123');
@@ -275,17 +295,146 @@ describe('chatgpt/image-edit', () => {
     const result = await imageEditCommand.func(page, {
       prompt: 'make it beige',
       url: 'https://chatgpt.com/c/thread123',
+      sd: 'true',
     });
 
     expect(imageEditInternals.openChatGPTImageEditComposer).toHaveBeenCalledWith(page);
-    expect(result).toEqual([{
-      action: 'edit',
+    expect(result).toEqual([
+      {
+        action: 'edit',
+        status: 'submitted',
+        page_url: 'https://chatgpt.com/c/edit123',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'edit123',
+      },
+    ]);
+  });
+
+  it('downloads the edited result automatically by default', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, requestedIndex: 1, source: 'images-my-images' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/images/',
+      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
+      accountTier: 'Pro',
+      modalVisible: true,
+      editComposerVisible: true,
+      editPromptPlaceholder: '描述编辑',
+    });
+    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
+      status: 'result_visible',
+      pageUrl: 'https://chatgpt.com/c/edit123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      conversationId: 'edit123',
+      resultActions: ['edit', 'share'],
+      resultActionLabels: ['编辑图片', '分享此图片'],
+      loadingHeadlines: [],
+    });
+    mockImageDownloadFunc.mockResolvedValue([
+      {
+        status: '✅ saved',
+        file: '📁 /tmp/chatgpt/edit_1.png',
+        link: '🔗 https://chatgpt.com/c/edit123',
+      },
+    ]);
+
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      op: '/tmp/chatgpt',
+      timeout: '5',
+    });
+
+    expect(mockImageDownloadFunc).toHaveBeenCalledWith(page, {
+      url: 'https://chatgpt.com/c/edit123',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+      before_urls: ['https://cdn.example.com/original-1.png'],
+    });
+    expect(result).toEqual([
+      {
+        action: 'edit',
+        status: 'saved',
+        file: '📁 /tmp/chatgpt/edit_1.png',
+        page_url: 'https://chatgpt.com/c/edit123',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'edit123',
+      },
+    ]);
+  });
+
+  it('retries edit auto-download polling until the edited image becomes downloadable', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, requestedIndex: 1, source: 'images-my-images' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/images/',
+      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
+      accountTier: 'Pro',
+      modalVisible: true,
+      editComposerVisible: true,
+      editPromptPlaceholder: '描述编辑',
+    });
+    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
       status: 'submitted',
-      page_url: 'https://chatgpt.com/c/edit123',
-      page_title: 'ChatGPT',
-      account_tier: 'Pro',
-      conversation_id: 'edit123',
-    }]);
+      pageUrl: 'https://chatgpt.com/c/edit999',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      conversationId: 'edit999',
+      resultActions: [],
+      resultActionLabels: [],
+      loadingHeadlines: ['正在创建图片'],
+    });
+    mockImageDownloadFunc
+      .mockResolvedValueOnce([
+        {
+          status: '⚠️ no-images',
+          file: '📁 -',
+          link: '🔗 https://chatgpt.com/c/edit999',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          status: '✅ saved',
+          file: '📁 /tmp/chatgpt/edit_999.png',
+          link: '🔗 https://chatgpt.com/c/edit999',
+        },
+      ]);
+
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it beige',
+      op: '/tmp/chatgpt',
+      timeout: '6',
+    });
+
+    expect(mockImageDownloadFunc).toHaveBeenCalledTimes(2);
+    expect(mockImageDownloadFunc).toHaveBeenNthCalledWith(1, page, {
+      url: 'https://chatgpt.com/c/edit999',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+      before_urls: ['https://cdn.example.com/original-1.png'],
+    });
+    expect(mockImageDownloadFunc).toHaveBeenNthCalledWith(2, page, {
+      url: 'https://chatgpt.com/c/edit999',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+      before_urls: ['https://cdn.example.com/original-1.png'],
+    });
+    expect(result).toEqual([
+      {
+        action: 'edit',
+        status: 'saved',
+        file: '📁 /tmp/chatgpt/edit_999.png',
+        page_url: 'https://chatgpt.com/c/edit999',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'edit999',
+      },
+    ]);
   });
 });
 
