@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { getRegistry } from '@jackwener/opencli/registry';
 import './settings.js';
@@ -13,6 +15,13 @@ function createPageMock(evaluateResults) {
 
 describe('codex settings command', () => {
   const command = getRegistry().get('codex/settings');
+  const source = readFileSync(fileURLToPath(new URL('./settings.js', import.meta.url)), 'utf8');
+
+  it('supports localized Chinese labels for settings and computer use navigation', () => {
+    expect(source).toContain('设置');
+    expect(source).toContain('电脑使用');
+    expect(source).toContain('计算机使用');
+  });
 
   it('opens settings and the computer use section via native clicks', async () => {
     const page = createPageMock([

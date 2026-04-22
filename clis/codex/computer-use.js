@@ -4,12 +4,17 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import { buildCodexComputerUseHint, classifyCodexComputerUseGate } from './utils.js';
 import { settingsCommand } from './settings.js';
 
+const TRY_IN_CHAT_LABELS = ['try in chat', '在聊天中试用'];
+const COMPUTER_USE_COMPOSER_LABELS = ['computer use', '计算机使用', '电脑使用'];
+
 const locateTryInChatScript = `
   (function() {
+    const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const labels = ${JSON.stringify(TRY_IN_CHAT_LABELS)};
     const btn = Array.from(document.querySelectorAll('button')).find((node) => {
-      const label = String(node.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
-      const text = String(node.innerText || node.textContent || '').replace(/\\s+/g, ' ').trim();
-      return label === 'Try in Chat' || text === 'Try in Chat';
+      const label = normalize(node.getAttribute('aria-label') || '');
+      const text = normalize(node.innerText || node.textContent || '');
+      return labels.includes(label) || labels.includes(text);
     });
     if (!(btn instanceof HTMLElement)) return null;
     const rect = btn.getBoundingClientRect();
@@ -22,8 +27,8 @@ const locateTryInChatScript = `
 
 const hasComputerUseComposerScript = `
   (function() {
-    const text = String(document.body.innerText || '').replace(/\\s+/g, ' ').trim();
-    return text.includes('Computer Use');
+    const text = String(document.body.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    return ${JSON.stringify(COMPUTER_USE_COMPOSER_LABELS)}.some((label) => text.includes(label));
   })()
 `;
 

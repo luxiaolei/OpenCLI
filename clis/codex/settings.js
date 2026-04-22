@@ -3,19 +3,29 @@ import WebSocket from 'ws';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { buildCodexComputerUseHint } from './utils.js';
 
+const SETTINGS_LABELS = ['settings', '设置'];
+const BACK_TO_APP_LABELS = ['back to app', '返回应用'];
+const COMPUTER_USE_SECTION_LABELS = ['computer use', '电脑使用', '计算机使用'];
+
 const hasSettingsShellScript = `
   (function() {
-    const text = String(document.body.innerText || '').replace(/\\s+/g, ' ').trim();
-    return text.includes('Back to app') && text.includes('Computer use');
+    const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const text = normalize(document.body.innerText || '');
+    const hasBack = ${JSON.stringify(BACK_TO_APP_LABELS)}.some((label) => text.includes(label));
+    const hasComputerUse = ${JSON.stringify(COMPUTER_USE_SECTION_LABELS)}.some((label) => text.includes(label));
+    return hasBack && hasComputerUse;
   })()
 `;
 
 const locateSettingsTriggerScript = `
   (function() {
     const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const labels = ${JSON.stringify(SETTINGS_LABELS)};
     const trigger = Array.from(document.querySelectorAll('button')).find((node) => {
-      return normalize(node.innerText || node.textContent || '') === 'settings'
-        && node.getAttribute('aria-haspopup') === 'menu';
+      const text = normalize(node.innerText || node.textContent || '');
+      const aria = normalize(node.getAttribute('aria-label') || '');
+      return (labels.includes(text) || labels.includes(aria))
+        && normalize(node.getAttribute('aria-haspopup') || '') === 'menu';
     });
     if (!(trigger instanceof HTMLElement)) return null;
     const rect = trigger.getBoundingClientRect();
@@ -29,8 +39,11 @@ const locateSettingsTriggerScript = `
 const locateSettingsMenuItemScript = `
   (function() {
     const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const labels = ${JSON.stringify(SETTINGS_LABELS)};
     const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find((node) => {
-      return normalize(node.innerText || node.textContent || '') === 'settings';
+      const text = normalize(node.innerText || node.textContent || '');
+      const aria = normalize(node.getAttribute('aria-label') || '');
+      return labels.includes(text) || labels.includes(aria);
     });
     if (!(item instanceof HTMLElement)) return null;
     const rect = item.getBoundingClientRect();
@@ -42,12 +55,18 @@ const locateSettingsMenuItemScript = `
 `;
 
 function buildLocateSettingsSectionScript(section) {
+  const target = String(section || '').replace(/-/g, ' ').trim().toLowerCase();
+  const aliases = target === 'computer use'
+    ? COMPUTER_USE_SECTION_LABELS
+    : [target];
   return `
     (function() {
       const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-      const target = ${JSON.stringify(String(section || '').replace(/-/g, ' ').trim().toLowerCase())};
+      const labels = ${JSON.stringify(aliases)};
       const node = Array.from(document.querySelectorAll('button,[role="tab"],[role="link"],div[role="link"]')).find((candidate) => {
-        return normalize(candidate.innerText || candidate.textContent || '') === target;
+        const text = normalize(candidate.innerText || candidate.textContent || '');
+        const aria = normalize(candidate.getAttribute('aria-label') || '');
+        return labels.includes(text) || labels.includes(aria);
       });
       if (!(node instanceof HTMLElement)) return null;
       const rect = node.getBoundingClientRect();

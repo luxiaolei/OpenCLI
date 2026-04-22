@@ -24,6 +24,10 @@ describe('codex computer-use command', () => {
     expect(source).toContain('isPersistentVariant');
   });
 
+  it('supports localized Chinese labels for the Try in Chat button', () => {
+    expect(source).toContain('在聊天中试用');
+  });
+
   it('opens Computer Use settings, clicks Try in Chat, and returns next-step guidance', async () => {
     const page = createPageMock([
       false,
