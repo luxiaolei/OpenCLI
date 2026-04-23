@@ -9,10 +9,16 @@ const {
   mockBrowserConnect,
   mockBrowserClose,
   browserState,
+  mockMaybeBindWorkspaceToCurrentTab,
 } = vi.hoisted(() => ({
   mockBrowserConnect: vi.fn(),
   mockBrowserClose: vi.fn(),
   browserState: { page: null as IPage | null },
+  mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
+}));
+
+vi.mock('./browser/workspace-reuse.js', () => ({
+  maybeBindWorkspaceToCurrentTab: mockMaybeBindWorkspaceToCurrentTab,
 }));
 
 vi.mock('./browser/index.js', () => {
@@ -114,6 +120,7 @@ describe('browser tab targeting commands', () => {
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
+    mockMaybeBindWorkspaceToCurrentTab.mockReset().mockResolvedValue(false);
 
     browserState.page = {
       goto: vi.fn().mockResolvedValue(undefined),
@@ -136,6 +143,15 @@ describe('browser tab targeting commands', () => {
       evaluateInFrame: vi.fn().mockResolvedValue('inside frame'),
       readNetworkCapture: vi.fn().mockResolvedValue([]),
     } as unknown as IPage;
+  });
+
+  it('auto-binds untargeted browser commands to the current Chrome tab before evaluating', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
   });
 
   it('binds browser commands to an explicit target tab via --tab', async () => {
@@ -236,7 +252,7 @@ describe('browser tab targeting commands', () => {
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"selected": "tab-2"');
   });
 
-  it('clears a saved default target when it is no longer present in the current session', async () => {
+  it('clears a saved default target when it is no longer present in the current session and falls back to current-tab reuse', async () => {
     const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
     const program = createProgram('', '');
 
@@ -253,6 +269,7 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
 
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
     expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
     expect(fs.existsSync(getBrowserStateFile(cacheDir))).toBe(false);

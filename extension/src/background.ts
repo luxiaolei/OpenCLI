@@ -284,6 +284,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepalive') void connect();
 });
 
+// Service workers can wake lazily without onInstalled/onStartup firing first
+// (for example when an unpacked extension is injected via --load-extension or
+// when Chrome resumes the worker on demand). Eagerly initialize on module load
+// so alarms/listeners/daemon connect are always armed for the current worker.
+initialize();
+
 // ─── Popup status API ───────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -940,10 +946,8 @@ async function handleSessions(cmd: Command): Promise<Result> {
 async function handleBindCurrent(cmd: Command, workspace: string): Promise<Result> {
   const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const fallbackTabs = await chrome.tabs.query({ lastFocusedWindow: true });
-  const allTabs = await chrome.tabs.query({});
   const boundTab = activeTabs.find((tab) => matchesBindCriteria(tab, cmd))
-    ?? fallbackTabs.find((tab) => matchesBindCriteria(tab, cmd))
-    ?? allTabs.find((tab) => matchesBindCriteria(tab, cmd));
+    ?? fallbackTabs.find((tab) => matchesBindCriteria(tab, cmd));
   if (!boundTab?.id) {
     return {
       id: cmd.id,

@@ -29,15 +29,17 @@ class MockWebSocket {
 
 function createChromeMock() {
   let nextTabId = 10;
+  let lastFocusedWindowId = 2;
   const tabs: MockTab[] = [
     { id: 1, windowId: 1, url: 'https://automation.example', title: 'automation', active: true, status: 'complete' },
     { id: 2, windowId: 2, url: 'https://user.example', title: 'user', active: true, status: 'complete' },
     { id: 3, windowId: 1, url: 'chrome://extensions', title: 'chrome', active: false, status: 'complete' },
   ];
 
-  const query = vi.fn(async (queryInfo: { windowId?: number; active?: boolean } = {}) => {
+  const query = vi.fn(async (queryInfo: { windowId?: number; active?: boolean; lastFocusedWindow?: boolean } = {}) => {
     return tabs.filter((tab) => {
       if (queryInfo.windowId !== undefined && tab.windowId !== queryInfo.windowId) return false;
+      if (queryInfo.lastFocusedWindow === true && tab.windowId !== lastFocusedWindowId) return false;
       if (queryInfo.active !== undefined && !!tab.active !== queryInfo.active) return false;
       return true;
     });
@@ -118,19 +120,51 @@ function createChromeMock() {
     },
   };
 
-  return { chrome, tabs, query, create, update };
+  return { chrome, tabs, query, create, update, setLastFocusedWindowId: (windowId: number) => { lastFocusedWindowId = windowId; } };
 }
 
 describe('background tab isolation', () => {
   beforeEach(() => {
+    vi.doUnmock('./cdp');
     vi.resetModules();
     vi.useRealTimers();
     vi.stubGlobal('WebSocket', MockWebSocket);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('initializes eagerly on module load for lazily awakened service workers', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const registerListeners = vi.fn();
+    const registerFrameTracking = vi.fn();
+    vi.doMock('./cdp', () => ({
+      registerListeners,
+      registerFrameTracking,
+      hasActiveNetworkCapture: vi.fn(() => false),
+      detach: vi.fn(async () => {}),
+      evaluateAsync: vi.fn(),
+      evaluateInFrame: vi.fn(),
+      getFrameTree: vi.fn(),
+      screenshot: vi.fn(),
+      setFileInputFiles: vi.fn(),
+      insertText: vi.fn(),
+      startNetworkCapture: vi.fn(),
+      readNetworkCapture: vi.fn(async () => []),
+      ensureAttached: vi.fn(),
+    }));
+
+    await import('./background');
+
+    expect(chrome.alarms.create).toHaveBeenCalledWith('keepalive', { periodInMinutes: 0.4 });
+    expect(registerListeners).toHaveBeenCalledTimes(1);
+    expect(registerFrameTracking).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:19825/ping', { signal: expect.any(AbortSignal) });
   });
 
   it('lists only automation-window web tabs', async () => {
@@ -257,6 +291,59 @@ describe('background tab isolation', () => {
     expect(evaluateInFrame).toHaveBeenCalledWith(1, 'document.title', 'cross-origin-nested', false);
   });
 
+  it('binds the active tab in the last focused window when it matches the requested domain', async () => {
+    const { chrome, tabs } = createChromeMock();
+    tabs[1].url = 'https://chatgpt.com/c/abc';
+    tabs[1].title = 'ChatGPT';
+    tabs[1].active = true;
+    tabs[0].active = false;
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleBindCurrent({
+      id: 'bind-1',
+      action: 'bind-current',
+      workspace: 'site:chatgpt',
+      matchDomain: 'chatgpt.com',
+    }, 'site:chatgpt');
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      page: 'target-2',
+      data: expect.objectContaining({ workspace: 'site:chatgpt', url: 'https://chatgpt.com/c/abc' }),
+    }));
+    expect(mod.__test__.getSession('site:chatgpt')).toEqual(expect.objectContaining({
+      windowId: 2,
+      owned: false,
+      preferredTabId: 2,
+    }));
+  });
+
+  it('does not bind a background tab from another window when no visible match exists', async () => {
+    const { chrome, tabs } = createChromeMock();
+    tabs[0].url = 'https://chatgpt.com/c/background';
+    tabs[0].title = 'Background ChatGPT';
+    tabs[0].active = false;
+    tabs[1].url = 'https://example.com';
+    tabs[1].title = 'Visible non-match';
+    tabs[1].active = true;
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleBindCurrent({
+      id: 'bind-2',
+      action: 'bind-current',
+      workspace: 'site:chatgpt',
+      matchDomain: 'chatgpt.com',
+    }, 'site:chatgpt');
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error: 'No visible tab matching chatgpt.com',
+    }));
+    expect(mod.__test__.getSession('site:chatgpt')).toBeNull();
+  });
+
   it('creates new tabs inside the automation window', async () => {
     const { chrome, create } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
@@ -342,6 +429,7 @@ describe('background tab isolation', () => {
     const detachMock = vi.fn(async () => {});
     vi.doMock('./cdp', () => ({
       registerListeners: vi.fn(),
+      registerFrameTracking: vi.fn(),
       hasActiveNetworkCapture: vi.fn(() => true),
       detach: detachMock,
     }));
@@ -401,6 +489,7 @@ describe('background tab isolation', () => {
     let maxInFlight = 0;
     vi.doMock('./cdp', () => ({
       registerListeners: vi.fn(),
+      registerFrameTracking: vi.fn(),
       evaluateAsync: vi.fn(async (tabId: number, code: string) => {
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
@@ -439,6 +528,7 @@ describe('background tab isolation', () => {
     let maxInFlight = 0;
     vi.doMock('./cdp', () => ({
       registerListeners: vi.fn(),
+      registerFrameTracking: vi.fn(),
       evaluateAsync: vi.fn(async (tabId: number, code: string) => {
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);

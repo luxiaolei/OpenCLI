@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BrowserBridge, generateStealthJs } from './browser/index.js';
+import { BrowserBridge, CDPBridge, generateStealthJs } from './browser/index.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './browser/tabs.js';
-import { withTimeoutMs } from './runtime.js';
+import { withTimeoutMs, getBrowserFactory } from './runtime.js';
 import { __test__ as cdpTest } from './browser/cdp.js';
 import { classifyBrowserError } from './browser/errors.js';
 import * as daemonClient from './browser/daemon-client.js';
@@ -110,6 +110,18 @@ describe('browser helpers', () => {
     ]);
 
     expect(target?.webSocketDebuggerUrl).toBe('ws://127.0.0.1:9226/codex');
+  });
+
+  it('uses direct CDP for web sites when OPENCLI_CDP_ENDPOINT is set', () => {
+    vi.stubEnv('OPENCLI_CDP_ENDPOINT', 'http://127.0.0.1:9222');
+
+    expect(getBrowserFactory('chatgpt')).toBe(CDPBridge);
+  });
+
+  it('falls back to BrowserBridge for web sites when no CDP endpoint override is set', () => {
+    vi.unstubAllEnvs();
+
+    expect(getBrowserFactory('chatgpt')).toBe(BrowserBridge);
   });
 });
 

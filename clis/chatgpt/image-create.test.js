@@ -7,10 +7,18 @@ vi.mock('@jackwener/opencli/registry', () => ({
 
 const {
   mockBuildRow,
+  mockGetConversationList,
   mockHasContext,
   mockOpenImages,
+  mockOpenConversation,
+  mockParseConversationUrl,
   mockParsePositiveInt,
+  mockParseTitleMatchMode,
   mockReadCapabilities,
+  mockReadCreateState,
+  mockRenameConversation,
+  mockResolveConversation,
+  mockSelectMode,
   mockSendPrompt,
   mockWaitForState,
 } = vi.hoisted(() => ({
@@ -20,14 +28,23 @@ const {
     page_url: snapshot.pageUrl || snapshot.url || '',
     page_title: snapshot.pageTitle || snapshot.title || '',
     account_tier: snapshot.accountTier || '',
+    ...(extra.modeLabel || snapshot.modeLabel ? { mode_label: extra.modeLabel || snapshot.modeLabel } : {}),
     conversation_id: snapshot.conversationId || '',
     ...(extra.reason ? { reason: extra.reason } : {}),
     ...(extra.detail ? { detail: extra.detail } : {}),
   })),
+  mockGetConversationList: vi.fn(),
   mockHasContext: vi.fn(),
   mockOpenImages: vi.fn(),
+  mockOpenConversation: vi.fn(),
+  mockParseConversationUrl: vi.fn(),
   mockParsePositiveInt: vi.fn((value, fallback) => Number.parseInt(String(value ?? fallback), 10) || fallback),
+  mockParseTitleMatchMode: vi.fn((value, fallback) => value || fallback),
   mockReadCapabilities: vi.fn(),
+  mockReadCreateState: vi.fn(),
+  mockRenameConversation: vi.fn(),
+  mockResolveConversation: vi.fn(),
+  mockSelectMode: vi.fn(),
   mockSendPrompt: vi.fn(),
   mockWaitForState: vi.fn(),
 }));
@@ -35,10 +52,18 @@ const {
 vi.mock('./utils.js', () => ({
   CHATGPT_WEB_DOMAIN: 'chatgpt.com',
   buildChatGPTImageCreateRow: mockBuildRow,
+  getChatGPTConversationList: mockGetConversationList,
   hasChatGPTImageContext: mockHasContext,
   openChatGPTImages: mockOpenImages,
+  openChatGPTConversation: mockOpenConversation,
+  parseChatGPTConversationUrl: mockParseConversationUrl,
   parseChatGPTPositiveInt: mockParsePositiveInt,
+  parseChatGPTTitleMatchMode: mockParseTitleMatchMode,
   readChatGPTImageCapabilities: mockReadCapabilities,
+  readChatGPTImageCreateState: mockReadCreateState,
+  renameChatGPTConversation: mockRenameConversation,
+  resolveChatGPTConversationForQuery: mockResolveConversation,
+  selectChatGPTImageMode: mockSelectMode,
   sendChatGPTImagePrompt: mockSendPrompt,
   waitForChatGPTImageCreateState: mockWaitForState,
 }));
@@ -62,7 +87,28 @@ describe('chatgpt/image-create', () => {
       resultActions: [],
     });
     mockHasContext.mockReturnValue(true);
+    mockGetConversationList.mockResolvedValue([
+      { Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' },
+    ]);
+    mockParseConversationUrl.mockReturnValue(null);
+    mockResolveConversation.mockReturnValue({ Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' });
+    mockSelectMode.mockResolvedValue({ ok: true, skipped: true, selectedLabel: '', currentLabel: '', availableLabels: [] });
+    mockReadCreateState.mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/dish123',
+      pathname: '/c/dish123',
+      pageTitle: '菜品生成',
+      conversationId: 'dish123',
+      resultActions: ['open'],
+      resultActionLabels: ['打开图片：菜品生成'],
+      isConversationPage: true,
+    });
     mockSendPrompt.mockResolvedValue({ ok: true });
+    mockRenameConversation.mockResolvedValue({
+      ok: true,
+      url: 'https://chatgpt.com/c/abc123',
+      conversationId: 'abc123',
+      threadTitle: '菜品生成 v2',
+    });
     mockWaitForState.mockResolvedValue({
       status: 'submitted',
       pageUrl: 'https://chatgpt.com/c/abc123',
@@ -169,5 +215,115 @@ describe('chatgpt/image-create', () => {
       account_tier: 'Pro',
       conversation_id: 'abc123',
     }]);
+  });
+
+  it('blocks --history when the selected conversation is not an image thread', async () => {
+    mockReadCreateState.mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/not-image',
+      pathname: '/c/not-image',
+      pageTitle: '普通聊天',
+      conversationId: 'not-image',
+      resultActions: [],
+      resultActionLabels: [],
+      isConversationPage: true,
+    });
+
+    const result = await imageCreateCommand.func(page, {
+      prompt: '继续做一版宫保鸡丁菜品海报',
+      history: '菜品生成',
+      match: 'contains',
+    });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      action: 'create',
+      status: 'blocked',
+      page_url: 'https://chatgpt.com/c/not-image',
+      page_title: '普通聊天',
+      account_tier: '',
+      conversation_id: 'not-image',
+      reason: 'history-not-image-thread',
+      detail: 'The selected history target is not an image conversation.',
+    }]);
+  });
+
+  it('continues an existing image history when --history matches a prior thread title', async () => {
+    const result = await imageCreateCommand.func(page, {
+      prompt: '继续做一版宫保鸡丁菜品海报',
+      history: '菜品生成',
+      match: 'contains',
+      timeout: '5',
+    });
+
+    expect(mockOpenImages).toHaveBeenCalledTimes(1);
+    expect(mockGetConversationList).toHaveBeenCalledWith(page);
+    expect(mockResolveConversation).toHaveBeenCalledWith([{ Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' }], '菜品生成', 'contains');
+    expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/dish123');
+    expect(mockReadCreateState).toHaveBeenCalledWith(page);
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, '继续做一版宫保鸡丁菜品海报');
+    expect(result[0].status).toBe('submitted');
+  });
+
+  it('selects the requested thinking / model label before sending the prompt', async () => {
+    mockSelectMode.mockResolvedValue({
+      ok: true,
+      skipped: false,
+      selectedLabel: 'Extended',
+      currentLabel: 'ChatGPT',
+      availableLabels: ['ChatGPT', 'Extended'],
+    });
+
+    const result = await imageCreateCommand.func(page, {
+      prompt: 'blue mug',
+      thinking: 'Extended',
+    });
+
+    expect(mockSelectMode).toHaveBeenCalledWith(page, 'Extended');
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, 'blue mug');
+    expect(result).toEqual([{
+      action: 'create',
+      status: 'submitted',
+      page_url: 'https://chatgpt.com/c/abc123',
+      page_title: 'OpenAI ChatGPT',
+      account_tier: 'Pro',
+      mode_label: 'Extended',
+      conversation_id: 'abc123',
+    }]);
+  });
+
+  it('returns blocked when the requested thinking / model label is unavailable', async () => {
+    mockSelectMode.mockResolvedValue({
+      ok: false,
+      reason: 'mode-option-not-found',
+      currentLabel: 'ChatGPT',
+      availableLabels: ['ChatGPT', 'Extended'],
+    });
+
+    const result = await imageCreateCommand.func(page, {
+      prompt: 'blue mug',
+      thinking: 'Thinking',
+    });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      action: 'create',
+      status: 'blocked',
+      page_url: 'https://chatgpt.com/images/',
+      page_title: 'ChatGPT 图片 | AI 图片生成器',
+      account_tier: 'Pro',
+      mode_label: 'ChatGPT',
+      conversation_id: '',
+      reason: 'thinking-unavailable',
+      detail: 'No model / thinking option matched: Thinking. Available: ChatGPT, Extended',
+    }]);
+  });
+
+  it('renames the resulting thread when --title is provided', async () => {
+    await imageCreateCommand.func(page, {
+      prompt: 'blue mug',
+      title: '菜品生成 v2',
+    });
+
+    expect(mockRenameConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/abc123', '菜品生成 v2');
   });
 });

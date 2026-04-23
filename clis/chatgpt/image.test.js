@@ -65,6 +65,10 @@ describe('chatgpt/image legacy shorthand', () => {
     expect(mockCreateFunc).toHaveBeenCalledWith(page, {
       prompt: 'blue ceramic mug',
       timeout: '30',
+      history: '',
+      match: 'contains',
+      title: '',
+      thinking: '',
     });
     expect(mockDownloadFunc).toHaveBeenCalledWith(page, {
       url: 'https://chatgpt.com/c/create123',
@@ -92,6 +96,14 @@ describe('chatgpt/image legacy shorthand', () => {
       sd: 'true',
     });
 
+    expect(mockCreateFunc).toHaveBeenCalledWith(page, {
+      prompt: 'tiny watercolor fox',
+      timeout: '30',
+      history: '',
+      match: 'contains',
+      title: '',
+      thinking: '',
+    });
     expect(mockDownloadFunc).not.toHaveBeenCalled();
     expect(rows).toEqual([
       {
@@ -197,5 +209,41 @@ describe('chatgpt/image legacy shorthand', () => {
         link: '🔗 https://chatgpt.com/c/create456',
       },
     ]);
+  });
+
+  it('passes the requested thinking / model label through to image-create', async () => {
+    await imageCommand.func(page, {
+      prompt: '继续做新品海报',
+      thinking: 'Extended',
+      sd: 'true',
+    });
+
+    expect(mockCreateFunc).toHaveBeenCalledWith(page, {
+      prompt: '继续做新品海报',
+      timeout: '30',
+      history: '',
+      match: 'contains',
+      title: '',
+      thinking: 'Extended',
+    });
+  });
+
+  it('passes history selection and requested title through to image-create', async () => {
+    await imageCommand.func(page, {
+      prompt: '继续做新品海报',
+      history: '菜品生成',
+      match: 'exact',
+      title: '菜品生成 v2',
+      sd: 'true',
+    });
+
+    expect(mockCreateFunc).toHaveBeenCalledWith(page, {
+      prompt: '继续做新品海报',
+      timeout: '30',
+      history: '菜品生成',
+      match: 'exact',
+      title: '菜品生成 v2',
+      thinking: '',
+    });
   });
 });

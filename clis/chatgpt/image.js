@@ -44,6 +44,10 @@ export const imageCommand = cli({
   timeoutSeconds: 240,
   args: [
     { name: 'prompt', positional: true, required: true, help: 'Image prompt to send to ChatGPT' },
+    { name: 'history', required: false, help: 'Optional ChatGPT conversation URL or title query to continue an existing image thread' },
+    { name: 'match', required: false, default: 'contains', help: 'Title match mode for --history: contains or exact' },
+    { name: 'title', required: false, help: 'Optional title to apply to the resulting ChatGPT conversation after submission' },
+    { name: 'thinking', required: false, help: 'Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt' },
     { name: 'op', default: path.join(os.homedir(), 'Pictures', 'chatgpt'), help: 'Output directory' },
     { name: 'timeout', default: DEFAULT_TIMEOUT, help: 'Max seconds to keep polling the generated thread for downloadable images before falling back to the ChatGPT link' },
     { name: 'sd', type: 'boolean', default: false, help: 'Skip download shorthand; only show ChatGPT link' },
@@ -53,10 +57,14 @@ export const imageCommand = cli({
     const prompt = String(kwargs.prompt ?? '').trim();
     const outputDir = kwargs.op || path.join(os.homedir(), 'Pictures', 'chatgpt');
     const timeout = String(kwargs.timeout ?? DEFAULT_TIMEOUT).trim() || DEFAULT_TIMEOUT;
+    const history = String(kwargs.history ?? '').trim();
+    const match = String(kwargs.match ?? 'contains').trim() || 'contains';
+    const title = String(kwargs.title ?? '').trim();
+    const thinking = String(kwargs.thinking ?? '').trim();
     const skipDownloadRaw = kwargs.sd;
     const skipDownload = skipDownloadRaw === '' || skipDownloadRaw === true || normalizeBooleanFlag(skipDownloadRaw);
 
-    const createRows = await imageCreateCommand.func(page, { prompt, timeout });
+    const createRows = await imageCreateCommand.func(page, { prompt, timeout, history, match, title, thinking });
     const createRow = Array.isArray(createRows) ? (createRows[0] || {}) : {};
     const createStatus = String(createRow?.status ?? '').trim().toLowerCase();
     const pageUrl = resolveChatGPTLink(createRow?.page_url);

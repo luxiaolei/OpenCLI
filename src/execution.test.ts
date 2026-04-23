@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CliCommand } from './registry.js';
+
+const { mockMaybeBindWorkspaceToCurrentTab } = vi.hoisted(() => ({
+  mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
+}));
+
+vi.mock('./browser/workspace-reuse.js', () => ({
+  maybeBindWorkspaceToCurrentTab: mockMaybeBindWorkspaceToCurrentTab,
+}));
+
 import { executeCommand, prepareCommandArgs } from './execution.js';
 import { TimeoutError } from './errors.js';
 import { cli, Strategy } from './registry.js';
@@ -129,6 +138,33 @@ describe('executeCommand — non-browser timeout', () => {
       else process.env.OPENCLI_LIVE = prev;
       vi.restoreAllMocks();
     }
+  });
+
+  it('prefers binding the current site tab before pre-navigation when browser reuse is enabled', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const goto = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow, goto } as any;
+
+    mockMaybeBindWorkspaceToCurrentTab.mockResolvedValue(true);
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+    const cmd = cli({
+      site: 'chatgpt',
+      name: 'browser-reuse',
+      description: 'test current-tab reuse for site adapters',
+      browser: true,
+      strategy: Strategy.COOKIE,
+      domain: 'chatgpt.com',
+      func: async () => [{ ok: true }],
+    });
+
+    await executeCommand(cmd, {});
+
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('site:chatgpt', { matchDomain: 'chatgpt.com' });
+    expect(mockMaybeBindWorkspaceToCurrentTab.mock.invocationCallOrder[0]).toBeLessThan(goto.mock.invocationCallOrder[0]);
+    vi.restoreAllMocks();
+    mockMaybeBindWorkspaceToCurrentTab.mockReset();
   });
 
   it('does not re-run custom validation when args are already prepared', async () => {

@@ -20,6 +20,8 @@ import { AdapterLoadError, ArgumentError, CommandExecutionError, getErrorMessage
 import { isDiagnosticEnabled, collectDiagnostic, emitDiagnostic } from './diagnostic.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
 import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT } from './runtime.js';
+import { CDPBridge } from './browser/index.js';
+import { maybeBindWorkspaceToCurrentTab } from './browser/workspace-reuse.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
 import { isElectronApp } from './electron-apps.js';
@@ -199,8 +201,12 @@ export async function executeCommand(
 
       ensureRequiredEnv(cmd);
       const BrowserFactory = electron ? getBrowserFactory(cmd.site) : getBrowserFactory();
+      const workspace = `site:${cmd.site}`;
+      const preNavUrl = resolvePreNav(cmd);
       result = await browserSession(BrowserFactory, async (page) => {
-        const preNavUrl = resolvePreNav(cmd);
+        if (!electron && BrowserFactory !== CDPBridge) {
+          await maybeBindWorkspaceToCurrentTab(workspace, cmd.domain ? { matchDomain: cmd.domain } : {});
+        }
         if (preNavUrl) {
           // Navigate directly — the extension's handleNavigate already has a fast-path
           // that skips navigation if the tab is already at the target URL.
@@ -242,7 +248,7 @@ export async function executeCommand(
           if (!keepOpen) await page.closeWindow?.().catch(() => {});
           throw err;
         }
-      }, { workspace: `site:${cmd.site}`, cdpEndpoint });
+      }, { workspace, cdpEndpoint });
     } else {
       // Non-browser commands: apply timeout only when explicitly configured.
       const timeout = cmd.timeoutSeconds;

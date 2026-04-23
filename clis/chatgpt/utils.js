@@ -340,6 +340,8 @@ function buildConversationListScript() {
       }
     };
 
+    const currentUrl = window.location.href || '';
+    const currentPath = window.location.pathname || '';
     const items = [];
     const seen = new Set();
     for (const node of Array.from(document.querySelectorAll('a[href]'))) {
@@ -350,7 +352,11 @@ function buildConversationListScript() {
       const title = clean(node.innerText || node.textContent || node.getAttribute('aria-label') || '');
       if (!title) continue;
       seen.add(url);
-      items.push({ Title: title, Url: url });
+      items.push({
+        Title: title,
+        Url: url,
+        Current: url === currentUrl || href === currentPath || clean(node.getAttribute('aria-current') || '').toLowerCase() === 'page',
+      });
     }
     return items;
   })()`;
@@ -496,6 +502,23 @@ function isChatGPTAuthUrl(value) {
 
 export function normalizeChatGPTTitle(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export function normalizeChatGPTOptionLabel(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export function pickChatGPTOptionLabel(options, query) {
+  const normalizedQuery = normalizeChatGPTOptionLabel(query);
+  if (!normalizedQuery) return null;
+  const rows = Array.isArray(options)
+    ? options.map((option) => ({
+      raw: String(option ?? '').trim(),
+      normalized: normalizeChatGPTOptionLabel(option),
+    })).filter((option) => option.normalized)
+    : [];
+  return rows.find((option) => option.normalized === normalizedQuery)
+    || rows.find((option) => option.normalized.includes(normalizedQuery));
 }
 
 export function pickChatGPTConversationByTitle(conversations, query, mode = 'contains') {
@@ -670,10 +693,216 @@ export async function getChatGPTConversationList(page) {
   return Array.isArray(items) ? items.filter((item) => item && typeof item.Url === 'string') : [];
 }
 
+function buildConversationSnapshotScript() {
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+
+    const currentUrl = window.location.href;
+    const currentPath = window.location.pathname || '';
+    const conversationMatch = currentPath.match(/^\\/c\\/([^/?#]+)/);
+    const documentTitle = clean(document.title || '').replace(/\\s*[-|·].*$/, '').trim();
+    return {
+      url: currentUrl,
+      pathname: currentPath,
+      conversationId: conversationMatch ? conversationMatch[1] : '',
+      threadTitle: documentTitle,
+      title: documentTitle,
+    };
+  })()`;
+}
+
+export function normalizeChatGPTConversationSnapshot(snapshot) {
+  const url = String(snapshot?.url ?? '').trim();
+  const title = String(snapshot?.threadTitle ?? snapshot?.title ?? '').trim();
+  return {
+    url,
+    pathname: String(snapshot?.pathname ?? '').trim(),
+    title,
+    threadTitle: title,
+    conversationId: String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(url),
+  };
+}
+
+export function buildChatGPTHistoryRow(snapshot, extra = {}) {
+  const normalized = normalizeChatGPTConversationSnapshot(snapshot);
+  const status = String(extra.status ?? '').trim() || 'ok';
+  return {
+    action: String(extra.action ?? '').trim() || 'history',
+    status,
+    title: String(extra.title ?? normalized.threadTitle ?? '').trim(),
+    url: String(extra.url ?? normalized.url ?? '').trim(),
+    conversation_id: String(extra.conversationId ?? normalized.conversationId ?? '').trim(),
+    ...(extra.detail ? { detail: String(extra.detail).trim() } : {}),
+  };
+}
+
+export async function readChatGPTConversationSnapshot(page) {
+  const snapshot = await page.evaluate(buildConversationSnapshotScript()).catch(async () => ({
+    url: await getCurrentChatGPTUrl(page),
+  }));
+  return normalizeChatGPTConversationSnapshot(snapshot);
+}
+
+function buildConversationMenuActionScript(url, action, payload = '') {
+  const menuLabels = ['more', 'more actions', '更多', '更多操作', 'conversation actions', '会话操作'];
+  const renameLabels = ['rename', '重命名'];
+  const deleteLabels = ['delete', '删除'];
+  const saveLabels = ['save', '保存', 'rename', '重命名', 'done', '完成', 'confirm', '确认'];
+  return `((targetUrl, targetAction, payloadText) => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+    const lower = (value) => clean(value).toLowerCase();
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const combinedLabel = (node) => clean([
+      node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '',
+      node instanceof Element ? (node.getAttribute('aria-label') || '') : '',
+      node instanceof Element ? (node.getAttribute('title') || '') : '',
+    ].filter(Boolean).join(' '));
+    const toAbsoluteUrl = (href) => {
+      try {
+        return new URL(href, window.location.origin).href;
+      } catch {
+        return '';
+      }
+    };
+    const allButtons = (root = document) => Array.from(root.querySelectorAll('button, [role="button"], [role="menuitem"], a, div[role="button"]')).filter((node) => isVisible(node));
+    const ancestorChain = (node) => {
+      const items = [];
+      let current = node instanceof HTMLElement ? node : null;
+      while (current && current !== document.body && items.length < 10) {
+        items.push(current);
+        current = current.parentElement;
+      }
+      if (document.body) items.push(document.body);
+      return items;
+    };
+    const labelIncludesAny = (value, labels) => labels.some((label) => value === label || value.includes(label));
+
+    const findConversationAnchor = () => Array.from(document.querySelectorAll('a[href]')).find((node) => isVisible(node) && toAbsoluteUrl(node.getAttribute('href') || '') === targetUrl) || null;
+    const anchor = findConversationAnchor();
+    if (!(anchor instanceof HTMLElement)) {
+      return { ok: false, reason: 'conversation-not-found', url: targetUrl };
+    }
+
+    const row = ancestorChain(anchor).find((candidate) => allButtons(candidate).some((button) => {
+      if (button === anchor) return false;
+      const label = lower(combinedLabel(button));
+      return labelIncludesAny(label, ${JSON.stringify(['more', 'more actions', '更多', '更多操作', 'conversation actions', '会话操作'])}) || lower(button.getAttribute('aria-haspopup') || '') === 'menu';
+    })) || anchor.parentElement || document.body;
+
+    let menuButton = allButtons(row).find((button) => {
+      if (button === anchor) return false;
+      const label = lower(combinedLabel(button));
+      return labelIncludesAny(label, ${JSON.stringify(['more', 'more actions', '更多', '更多操作', 'conversation actions', '会话操作'])}) || lower(button.getAttribute('aria-haspopup') || '') === 'menu';
+    }) || null;
+    if (!(menuButton instanceof HTMLElement)) {
+      const rowButtons = allButtons(row).filter((button) => button !== anchor);
+      menuButton = rowButtons[rowButtons.length - 1] || null;
+    }
+    if (!(menuButton instanceof HTMLElement)) {
+      return { ok: false, reason: 'menu-button-not-found', url: targetUrl };
+    }
+
+    menuButton.click();
+    return waitFor(180).then(() => {
+      const actionLabels = targetAction === 'rename' ? ${JSON.stringify(['rename', '重命名'])} : ${JSON.stringify(['delete', '删除'])};
+      const actionNode = allButtons(document).find((button) => labelIncludesAny(lower(combinedLabel(button)), actionLabels));
+      if (!(actionNode instanceof HTMLElement)) {
+        return { ok: false, reason: 'action-not-found', url: targetUrl };
+      }
+      actionNode.click();
+      return waitFor(220).then(() => {
+        if (targetAction === 'rename') {
+          const input = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]')).find((node) => isVisible(node));
+          if (!(input instanceof HTMLElement)) {
+            return { ok: false, reason: 'rename-input-not-found', url: targetUrl };
+          }
+          if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+            input.focus();
+            input.value = payloadText;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          } else {
+            input.focus();
+            input.textContent = payloadText;
+            input.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              cancelable: true,
+              data: payloadText,
+              inputType: 'insertText',
+            }));
+          }
+          const saveNode = allButtons(document).find((button) => labelIncludesAny(lower(combinedLabel(button)), ${JSON.stringify(['save', '保存', 'rename', '重命名', 'done', '完成', 'confirm', '确认'])}));
+          if (!(saveNode instanceof HTMLElement)) {
+            return { ok: false, reason: 'rename-confirm-not-found', url: targetUrl };
+          }
+          saveNode.click();
+          return waitFor(180).then(() => ({ ok: true, action: 'rename', url: targetUrl, threadTitle: payloadText }));
+        }
+
+        const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [data-radix-popper-content-wrapper]')).filter((node) => isVisible(node));
+        const deleteNode = allButtons(dialogs[0] || document).find((button) => button !== actionNode && labelIncludesAny(lower(combinedLabel(button)), ${JSON.stringify(['delete', '删除'])}));
+        if (!(deleteNode instanceof HTMLElement)) {
+          return { ok: false, reason: 'delete-confirm-not-found', url: targetUrl };
+        }
+        deleteNode.click();
+        return waitFor(180).then(() => ({ ok: true, action: 'delete', url: targetUrl }));
+      });
+    });
+  })(${JSON.stringify(url)}, ${JSON.stringify(action)}, ${JSON.stringify(payload)})`;
+}
+
+export async function renameChatGPTConversation(page, url, title) {
+  const targetUrl = parseChatGPTConversationUrl(url);
+  const nextTitle = String(title ?? '').trim();
+  if (!targetUrl || !nextTitle) {
+    return { ok: false, reason: 'invalid-rename-target', url: targetUrl || String(url ?? '').trim() };
+  }
+  await openChatGPTConversation(page, targetUrl);
+  const result = await page.evaluate(buildConversationMenuActionScript(targetUrl, 'rename', nextTitle)).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    url: targetUrl,
+  }));
+  return {
+    ...normalizeChatGPTConversationSnapshot({ url: targetUrl, threadTitle: nextTitle }),
+    ...(result && typeof result === 'object' ? result : {}),
+  };
+}
+
+export async function deleteChatGPTConversation(page, url) {
+  const targetUrl = parseChatGPTConversationUrl(url);
+  if (!targetUrl) {
+    return { ok: false, reason: 'invalid-delete-target', url: String(url ?? '').trim() };
+  }
+  await openChatGPTConversation(page, targetUrl);
+  const result = await page.evaluate(buildConversationMenuActionScript(targetUrl, 'delete')).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    url: targetUrl,
+  }));
+  return {
+    ...normalizeChatGPTConversationSnapshot({ url: targetUrl }),
+    ...(result && typeof result === 'object' ? result : {}),
+  };
+}
+
 export const CHATGPT_IMAGES_URL = 'https://chatgpt.com/images';
 
 function buildImageCapabilitiesScript() {
-  return `(() => {
+  return `((async () => {
     const clean = (value) => String(value ?? '')
       .replace(/\u00a0/g, ' ')
       .replace(/\s+/g, ' ')
@@ -691,10 +920,17 @@ function buildImageCapabilitiesScript() {
     const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
     const lower = (value) => clean(value).toLowerCase();
     const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
     const accountButton = queryVisible(document, '[data-testid="accounts-profile-button"]');
     const promptInput = Array.from(mainRoot.querySelectorAll('textarea')).find((node) => isVisible(node)) || null;
+    const modelSelector = queryVisible(document, '[data-testid="model-switcher-dropdown-button"]')
+      || Array.from(document.querySelectorAll('button, [role="button"]')).find((node) => {
+        if (!isVisible(node)) return false;
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('model selector') || label.includes('模型选择器');
+      }) || null;
     const addButton = queryVisible(mainRoot, '#composer-plus-btn')
       || Array.from(mainRoot.querySelectorAll('button')).find((node) => {
         if (!isVisible(node)) return false;
@@ -739,11 +975,45 @@ function buildImageCapabilitiesScript() {
       return value.includes('拖放图片以上传') || (value.includes('drag') && value.includes('upload'));
     }) || null;
 
+    const collectModelOptions = () => {
+      const menuRoots = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper], [role="menu"], [role="listbox"], [data-state="open"]'))
+        .filter((node) => isVisible(node));
+      const seen = new Set();
+      const labels = [];
+      for (const root of menuRoots) {
+        const candidates = [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')];
+        for (const node of candidates) {
+          if (!isVisible(node)) continue;
+          const label = clean(attrOf(node, 'aria-label') || textOf(node));
+          if (!label || label.length > 80) continue;
+          const normalized = lower(label);
+          if (normalized === lower(textOf(modelSelector)) || normalized === lower(attrOf(modelSelector, 'aria-label'))) continue;
+          if (seen.has(normalized)) continue;
+          seen.add(normalized);
+          labels.push(label);
+        }
+      }
+      return labels;
+    };
+
+    let modelOptions = [];
+    if (modelSelector instanceof HTMLElement) {
+      modelSelector.click();
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await waitFor(160);
+        modelOptions = collectModelOptions();
+        if (modelOptions.length > 0) break;
+      }
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
     return {
       url: window.location.href,
       pathname: window.location.pathname || '',
       title: clean(document.title || ''),
       accountTier: textOf(accountButton).includes('Pro') ? 'Pro' : '',
+      modelSelectorLabel: textOf(modelSelector) || attrOf(modelSelector, 'aria-label'),
+      modelOptions,
       promptPlaceholder: attrOf(promptInput, 'placeholder') || attrOf(promptInput, 'aria-label'),
       addButtonLabel: attrOf(addButton, 'aria-label') || textOf(addButton),
       voiceButtonLabel: attrOf(voiceButton, 'aria-label') || textOf(voiceButton),
@@ -755,7 +1025,7 @@ function buildImageCapabilitiesScript() {
       resultActions,
       isImagesPage: (window.location.pathname || '').startsWith('/images'),
     };
-  })()`;
+  })())`;
 }
 
 export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
@@ -770,6 +1040,8 @@ export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
     pathname: String(snapshot?.pathname ?? '').trim(),
     title: String(snapshot?.title ?? '').trim(),
     accountTier: String(snapshot?.accountTier ?? '').trim(),
+    modelSelectorLabel: String(snapshot?.modelSelectorLabel ?? '').trim(),
+    modelOptions: asArray(snapshot?.modelOptions),
     promptPlaceholder: String(snapshot?.promptPlaceholder ?? '').trim(),
     addButtonLabel: String(snapshot?.addButtonLabel ?? '').trim(),
     voiceButtonLabel: String(snapshot?.voiceButtonLabel ?? '').trim(),
@@ -825,6 +1097,8 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
   }
 
   push('account', 'tier', normalized.accountTier);
+  push('composer', 'model_selector', normalized.modelSelectorLabel);
+  normalized.modelOptions.forEach((item) => push('composer', 'model_option', item));
   push('composer', 'prompt_placeholder', normalized.promptPlaceholder);
   push('composer', 'add_button', normalized.addButtonLabel);
   push('composer', 'voice_button', normalized.voiceButtonLabel);
@@ -850,6 +1124,109 @@ export async function readChatGPTImageCapabilities(page) {
   return normalizeChatGPTImageCapabilitySnapshot(snapshot);
 }
 
+function buildImageModeSelectionScript(requestedMode) {
+  return `((requestedLabel) => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const lower = (value) => clean(value).toLowerCase();
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const currentQuery = lower(requestedLabel);
+    if (!currentQuery) return { ok: true, skipped: true };
+
+    const modelSelector = Array.from(document.querySelectorAll('[data-testid="model-switcher-dropdown-button"], button, [role="button"]'))
+      .find((node) => {
+        if (!isVisible(node)) return false;
+        const dataTestId = node instanceof Element ? (node.getAttribute('data-testid') || '') : '';
+        if (dataTestId === 'model-switcher-dropdown-button') return true;
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('model selector') || label.includes('模型选择器');
+      }) || null;
+    if (!(modelSelector instanceof HTMLElement)) {
+      return { ok: false, reason: 'model-selector-not-found' };
+    }
+
+    const currentLabel = textOf(modelSelector) || attrOf(modelSelector, 'aria-label');
+    const selectorLabels = [currentLabel, attrOf(modelSelector, 'aria-label')].map((label) => lower(label)).filter(Boolean);
+    if (selectorLabels.includes(currentQuery)) {
+      return { ok: true, selectedLabel: currentLabel, currentLabel, alreadySelected: true, availableLabels: [] };
+    }
+
+    const collectOptions = () => {
+      const menuRoots = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper], [role="menu"], [role="listbox"], [data-state="open"]'))
+        .filter((node) => isVisible(node));
+      const seen = new Set();
+      const options = [];
+      for (const root of menuRoots) {
+        const candidates = [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')];
+        for (const node of candidates) {
+          if (!isVisible(node)) continue;
+          const label = clean(attrOf(node, 'aria-label') || textOf(node));
+          if (!label || label.length > 80) continue;
+          const normalized = lower(label);
+          if (selectorLabels.includes(normalized) || seen.has(normalized)) continue;
+          seen.add(normalized);
+          options.push({ node, label, normalized });
+        }
+      }
+      return options;
+    };
+
+    return (async () => {
+      modelSelector.click();
+      let options = [];
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await waitFor(180);
+        options = collectOptions();
+        if (options.length > 0) break;
+      }
+
+      const exact = options.find((option) => option.normalized === currentQuery) || null;
+      const partial = exact || options.find((option) => option.normalized.includes(currentQuery)) || null;
+      if (!partial?.node || !(partial.node instanceof HTMLElement)) {
+        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return {
+          ok: false,
+          reason: options.length > 0 ? 'mode-option-not-found' : 'mode-options-not-visible',
+          currentLabel,
+          availableLabels: options.map((option) => option.label),
+        };
+      }
+
+      partial.node.click();
+      await waitFor(180);
+      return {
+        ok: true,
+        currentLabel,
+        selectedLabel: partial.label,
+        availableLabels: options.map((option) => option.label),
+      };
+    })();
+  })(${JSON.stringify(requestedMode)})`;
+}
+
+export async function selectChatGPTImageMode(page, requestedMode) {
+  const query = String(requestedMode ?? '').trim();
+  if (!query) return { ok: true, skipped: true };
+  const result = await page.evaluate(buildImageModeSelectionScript(query)).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    currentLabel: '',
+    availableLabels: [],
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image mode selection result.' };
+}
+
 function buildImageCreateStateScript() {
   return `(() => {
     const clean = (value) => String(value ?? '')
@@ -871,6 +1248,7 @@ function buildImageCreateStateScript() {
     const actionSelectors = '[data-testid="image-gen-overlay-left-actions"] button, [data-testid="image-gen-overlay-right-actions"] button, button, [role="button"], a';
 
     const accountButton = document.querySelector('[data-testid="accounts-profile-button"]');
+    const modelSelector = document.querySelector('[data-testid="model-switcher-dropdown-button"]');
     const resultActionLabels = uniq(Array.from(document.querySelectorAll(actionSelectors))
       .filter((node) => isVisible(node))
       .map((node) => attrOf(node, 'aria-label') || textOf(node))
@@ -886,6 +1264,7 @@ function buildImageCreateStateScript() {
       pathname: window.location.pathname || '',
       title: clean(document.title || ''),
       accountTier: textOf(accountButton).includes('Pro') ? 'Pro' : '',
+      modeLabel: textOf(modelSelector) || attrOf(modelSelector, 'aria-label'),
       resultActionLabels,
       isImagesPage: (window.location.pathname || '').startsWith('/images'),
       isConversationPage: /^\\/c\\//.test(window.location.pathname || ''),
@@ -1054,6 +1433,7 @@ export function normalizeChatGPTImageCreateSnapshot(snapshot) {
     pathname: String(snapshot?.pathname ?? '').trim(),
     pageTitle: String(snapshot?.pageTitle ?? snapshot?.title ?? '').trim(),
     accountTier: String(snapshot?.accountTier ?? '').trim(),
+    modeLabel: String(snapshot?.modeLabel ?? '').trim(),
     conversationId: String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(pageUrl),
     resultActions: Array.from(new Set([...explicitActions, ...derivedActions])),
     resultActionLabels,
@@ -1073,6 +1453,7 @@ export function buildChatGPTImageCreateRow(snapshot, extra = {}) {
     page_url: normalized.pageUrl,
     page_title: normalized.pageTitle,
     account_tier: normalized.accountTier,
+    mode_label: String(extra.modeLabel ?? normalized.modeLabel ?? '').trim(),
     conversation_id: normalized.conversationId,
   };
   if (extra.reason) row.reason = String(extra.reason);

@@ -30,6 +30,7 @@ import { parseFilter, shapeMatchesFilter } from './browser/shape-filter.js';
 import { buildHtmlTreeJs, type HtmlTreeResult } from './browser/html-tree.js';
 import { buildExtractHtmlJs, runExtractFromHtml } from './browser/extract.js';
 import { daemonStatus, daemonStop } from './commands/daemon.js';
+import { maybeBindWorkspaceToCurrentTab } from './browser/workspace-reuse.js';
 import { log } from './logger.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
@@ -203,9 +204,19 @@ async function getBrowserPage(targetPage?: string): Promise<import('./types.js')
     workspace: DEFAULT_BROWSER_WORKSPACE,
     ...(idleTimeout && idleTimeout > 0 && { idleTimeout }),
   });
-  const resolvedTargetPage = targetPage
-    ? await resolveBrowserTargetInSession(page, targetPage, { scope: DEFAULT_BROWSER_WORKSPACE, source: 'explicit' })
-    : await resolveStoredBrowserTarget(page, DEFAULT_BROWSER_WORKSPACE);
+  const storedDefaultTarget = loadBrowserTargetState(DEFAULT_BROWSER_WORKSPACE)?.defaultPage?.trim();
+  let resolvedTargetPage: string | undefined;
+  if (targetPage) {
+    resolvedTargetPage = await resolveBrowserTargetInSession(page, targetPage, { scope: DEFAULT_BROWSER_WORKSPACE, source: 'explicit' });
+  } else {
+    if (!storedDefaultTarget) {
+      await maybeBindWorkspaceToCurrentTab(DEFAULT_BROWSER_WORKSPACE, {});
+    }
+    resolvedTargetPage = await resolveStoredBrowserTarget(page, DEFAULT_BROWSER_WORKSPACE);
+    if (!resolvedTargetPage && storedDefaultTarget) {
+      await maybeBindWorkspaceToCurrentTab(DEFAULT_BROWSER_WORKSPACE, {});
+    }
+  }
   if (resolvedTargetPage) {
     if (!page.setActivePage) {
       throw new Error('This browser session does not support explicit tab targeting');

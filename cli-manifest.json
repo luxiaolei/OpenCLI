@@ -3330,6 +3330,140 @@
   },
   {
     "site": "chatgpt",
+    "name": "history-delete",
+    "description": "Delete a ChatGPT conversation chosen by URL or title query",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Conversation URL or title query to delete"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode: contains or exact"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "title",
+      "url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/history-delete.js",
+    "sourceFile": "chatgpt/history-delete.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "history-list",
+    "description": "List visible ChatGPT conversation history items from the sidebar",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [],
+    "columns": [
+      "title",
+      "url",
+      "current"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/history-list.js",
+    "sourceFile": "chatgpt/history-list.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "history-open",
+    "description": "Open a ChatGPT conversation by URL or title query",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Conversation URL, title query, or empty for latest visible history item"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode: contains or exact"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "title",
+      "url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/history-open.js",
+    "sourceFile": "chatgpt/history-open.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "history-rename",
+    "description": "Rename a ChatGPT conversation chosen by URL or title query",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Conversation URL or title query to rename"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "New title to apply to the selected conversation"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode: contains or exact"
+      }
+    ],
+    "columns": [
+      "action",
+      "status",
+      "title",
+      "url",
+      "conversation_id"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/history-rename.js",
+    "sourceFile": "chatgpt/history-rename.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "image",
     "description": "Generate images with the ChatGPT /images workbench and optionally save all visible results locally",
     "domain": "chatgpt.com",
@@ -3342,6 +3476,31 @@
         "required": true,
         "positional": true,
         "help": "Image prompt to send to ChatGPT"
+      },
+      {
+        "name": "history",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT conversation URL or title query to continue an existing image thread"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode for --history: contains or exact"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": false,
+        "help": "Optional title to apply to the resulting ChatGPT conversation after submission"
+      },
+      {
+        "name": "thinking",
+        "type": "str",
+        "required": false,
+        "help": "Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt"
       },
       {
         "name": "op",
@@ -3411,6 +3570,31 @@
         "help": "Prompt to send into the ChatGPT /images workbench"
       },
       {
+        "name": "history",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT conversation URL or title query to continue an existing image thread"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode for --history: contains or exact"
+      },
+      {
+        "name": "title",
+        "type": "str",
+        "required": false,
+        "help": "Optional title to apply to the resulting ChatGPT conversation after submission"
+      },
+      {
+        "name": "thinking",
+        "type": "str",
+        "required": false,
+        "help": "Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt"
+      },
+      {
         "name": "timeout",
         "type": "str",
         "default": "30",
@@ -3422,7 +3606,8 @@
       "action",
       "status",
       "page_url",
-      "conversation_id"
+      "conversation_id",
+      "mode_label"
     ],
     "timeout": 180,
     "type": "js",
