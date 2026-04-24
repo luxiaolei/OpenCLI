@@ -15,6 +15,7 @@ import ts from 'typescript';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const CLIS_DIR = path.join(ROOT, 'clis');
+const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 
 /** Recursively collect all JS adapter files in a directory. */
 function collectAdapterFiles(dir: string, opts?: { excludeTests?: boolean }): string[] {
@@ -31,11 +32,18 @@ function collectAdapterFiles(dir: string, opts?: { excludeTests?: boolean }): st
   return results;
 }
 
+const DECLARED_PACKAGE_DEPENDENCIES = new Set([
+  ...Object.keys(PACKAGE_JSON.dependencies ?? {}),
+  ...Object.keys(PACKAGE_JSON.peerDependencies ?? {}),
+  ...Object.keys(PACKAGE_JSON.optionalDependencies ?? {}),
+]);
+
 const ALLOWED_BARE_IMPORTS = new Set([
   '@jackwener/opencli',
   ...builtinModules.flatMap((name) => name.startsWith('node:')
     ? [name, name.slice(5)]
     : [name, `node:${name}`]),
+  ...DECLARED_PACKAGE_DEPENDENCIES,
 ]);
 
 function isAllowedImport(specifier: string): boolean {
@@ -79,7 +87,7 @@ describe('adapter imports use package exports', () => {
     expect(violations).toEqual([]);
   });
 
-  it('non-test adapters only import node builtins, relative modules, or opencli public APIs', () => {
+  it('non-test adapters only import node builtins, declared package dependencies, relative modules, or opencli public APIs', () => {
     const violations: Array<{ file: string; specifier: string }> = [];
 
     for (const file of runtimeAdapterFiles) {
@@ -103,7 +111,7 @@ describe('adapter imports use package exports', () => {
 });
 
 describe('package.json exports resolve to real files', () => {
-  const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
+  const pkgJson = PACKAGE_JSON;
   const exports = pkgJson.exports as Record<string, string>;
 
   it('has exports defined', () => {

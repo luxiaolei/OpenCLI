@@ -69,6 +69,9 @@ describe('chatgpt/image legacy shorthand', () => {
       match: 'contains',
       title: '',
       thinking: '',
+      file: '',
+      aspect: '',
+      size: '',
     });
     expect(mockDownloadFunc).toHaveBeenCalledWith(page, {
       url: 'https://chatgpt.com/c/create123',
@@ -103,6 +106,9 @@ describe('chatgpt/image legacy shorthand', () => {
       match: 'contains',
       title: '',
       thinking: '',
+      file: '',
+      aspect: '',
+      size: '',
     });
     expect(mockDownloadFunc).not.toHaveBeenCalled();
     expect(rows).toEqual([
@@ -225,6 +231,30 @@ describe('chatgpt/image legacy shorthand', () => {
       match: 'contains',
       title: '',
       thinking: 'Extended',
+      file: '',
+      aspect: '',
+      size: '',
+    });
+  });
+
+  it('passes reference image and aspect ratio options through to image-create', async () => {
+    await imageCommand.func(page, {
+      prompt: '参考这张图做一张横版海报',
+      file: '/tmp/reference.png',
+      aspect: '16:9',
+      sd: 'true',
+    });
+
+    expect(mockCreateFunc).toHaveBeenCalledWith(page, {
+      prompt: '参考这张图做一张横版海报',
+      timeout: '30',
+      history: '',
+      match: 'contains',
+      title: '',
+      thinking: '',
+      file: '/tmp/reference.png',
+      aspect: '16:9',
+      size: '',
     });
   });
 
@@ -244,6 +274,9 @@ describe('chatgpt/image legacy shorthand', () => {
       match: 'exact',
       title: '菜品生成 v2',
       thinking: '',
+      file: '',
+      aspect: '',
+      size: '',
     });
   });
 });

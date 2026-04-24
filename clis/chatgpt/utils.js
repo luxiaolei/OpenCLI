@@ -1227,6 +1227,256 @@ export async function selectChatGPTImageMode(page, requestedMode) {
   return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image mode selection result.' };
 }
 
+function buildImageAspectSelectionScript(requestedAspect) {
+  return `((requestedLabel) => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+    const lower = (value) => clean(value).toLowerCase();
+    const compact = (value) => lower(value).replace(/[：:]/g, ':').replace(/\\s+/g, '');
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label'), attrOf(node, 'title')].filter(Boolean).join(' '));
+    const queryRaw = clean(requestedLabel);
+    const query = compact(queryRaw);
+    if (!query) return { ok: true, skipped: true };
+
+    const aliasesByQuery = new Map([
+      ['square', ['square', '1:1', '方形', '正方形']],
+      ['方形', ['square', '1:1', '方形', '正方形']],
+      ['正方形', ['square', '1:1', '方形', '正方形']],
+      ['landscape', ['landscape', '16:9', '横向', '横版', '宽屏']],
+      ['横向', ['landscape', '16:9', '横向', '横版', '宽屏']],
+      ['横版', ['landscape', '16:9', '横向', '横版', '宽屏']],
+      ['portrait', ['portrait', '9:16', '纵向', '竖向', '竖版']],
+      ['纵向', ['portrait', '9:16', '纵向', '竖向', '竖版']],
+      ['竖向', ['portrait', '9:16', '纵向', '竖向', '竖版']],
+      ['竖版', ['portrait', '9:16', '纵向', '竖向', '竖版']],
+    ]);
+    const wanted = new Set([query, lower(queryRaw), ...((aliasesByQuery.get(query) || aliasesByQuery.get(lower(queryRaw)) || []).map((item) => compact(item)))]);
+    const ratioPattern = /\\b\\d+\\s*[:：]\\s*\\d+\\b/;
+    const isAspectishLabel = (label) => {
+      const value = lower(label);
+      const flat = compact(label);
+      return ratioPattern.test(label)
+        || value.includes('aspect')
+        || value.includes('ratio')
+        || value.includes('size')
+        || value.includes('orientation')
+        || value.includes('比例')
+        || value.includes('尺寸')
+        || value.includes('横向')
+        || value.includes('横版')
+        || value.includes('竖向')
+        || value.includes('竖版')
+        || value.includes('纵向')
+        || value.includes('方形')
+        || value.includes('正方形')
+        || flat.includes('square')
+        || flat.includes('portrait')
+        || flat.includes('landscape');
+    };
+    const matchesWanted = (label) => {
+      const value = lower(label);
+      const flat = compact(label);
+      if (wanted.has(flat) || wanted.has(value)) return true;
+      for (const item of wanted) {
+        if (item && (flat.includes(item) || value.includes(item))) return true;
+      }
+      return false;
+    };
+    const isBadControl = (node) => {
+      const label = lower(combinedLabel(node));
+      const testId = lower(attrOf(node, 'data-testid'));
+      return testId.includes('model-switcher')
+        || testId.includes('send')
+        || label.includes('send prompt')
+        || label.includes('发送提示')
+        || label.includes('添加文件')
+        || label.includes('add file')
+        || label.includes('voice')
+        || label.includes('dictation');
+    };
+    const allClickable = () => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"], [data-radix-collection-item]'))
+      .filter((node) => isVisible(node) && !isBadControl(node));
+    const collectOptions = () => {
+      const roots = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper], [role="menu"], [role="listbox"], [data-state="open"]'))
+        .filter((node) => isVisible(node));
+      const candidates = roots.length > 0
+        ? roots.flatMap((root) => [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')])
+        : allClickable();
+      const seen = new Set();
+      const options = [];
+      for (const node of candidates) {
+        if (!(node instanceof HTMLElement) || !isVisible(node) || isBadControl(node)) continue;
+        const label = combinedLabel(node);
+        if (!label || label.length > 100) continue;
+        if (!isAspectishLabel(label) && !matchesWanted(label)) continue;
+        const key = compact(label);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push({ node, label, normalized: key });
+      }
+      return options;
+    };
+
+    return (async () => {
+      const visibleOptions = collectOptions();
+      const already = visibleOptions.find((option) => matchesWanted(option.label) && /true|checked/i.test(String(option.node.getAttribute('aria-selected') || option.node.getAttribute('aria-checked') || option.node.getAttribute('aria-pressed') || '')));
+      if (already) {
+        return { ok: true, alreadySelected: true, selectedLabel: already.label, currentLabel: already.label, availableLabels: visibleOptions.map((option) => option.label) };
+      }
+
+      const direct = visibleOptions.find((option) => matchesWanted(option.label)) || null;
+      if (direct?.node instanceof HTMLElement) {
+        direct.node.click();
+        await waitFor(180);
+        return { ok: true, selectedLabel: direct.label, currentLabel: '', availableLabels: visibleOptions.map((option) => option.label) };
+      }
+
+      const triggerCandidates = allClickable().filter((node) => isAspectishLabel(combinedLabel(node)));
+      const sortedTriggers = triggerCandidates.sort((a, b) => {
+        const aLabel = combinedLabel(a);
+        const bLabel = combinedLabel(b);
+        const aScore = ratioPattern.test(aLabel) ? 10 : 0;
+        const bScore = ratioPattern.test(bLabel) ? 10 : 0;
+        return bScore - aScore;
+      });
+      const tried = [];
+      let lastOptions = visibleOptions;
+      for (const trigger of sortedTriggers.slice(0, 8)) {
+        const triggerLabel = combinedLabel(trigger);
+        tried.push(triggerLabel);
+        trigger.click();
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await waitFor(160);
+          const options = collectOptions();
+          if (options.length > 0) lastOptions = options;
+          const found = options.find((option) => matchesWanted(option.label));
+          if (found?.node instanceof HTMLElement) {
+            found.node.click();
+            await waitFor(180);
+            return { ok: true, selectedLabel: found.label, currentLabel: triggerLabel, availableLabels: options.map((option) => option.label), triggerLabel };
+          }
+        }
+      }
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return {
+        ok: false,
+        reason: lastOptions.length > 0 ? 'aspect-option-not-found' : 'aspect-selector-not-found',
+        requestedLabel: queryRaw,
+        availableLabels: Array.from(new Set(lastOptions.map((option) => option.label).concat(tried))).filter(Boolean),
+      };
+    })();
+  })(${JSON.stringify(requestedAspect)})`;
+}
+
+export async function selectChatGPTImageAspect(page, requestedAspect) {
+  const query = String(requestedAspect ?? '').trim();
+  if (!query) return { ok: true, skipped: true };
+  const result = await page.evaluate(buildImageAspectSelectionScript(query)).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    currentLabel: '',
+    availableLabels: [],
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image aspect selection result.' };
+}
+
+function buildImageReferenceUploadScript(fileSpec) {
+  return `((referenceFile) => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const lower = (value) => clean(value).toLowerCase();
+    const bytesFromBase64 = (base64) => {
+      const binary = atob(String(base64 || ''));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    };
+    const acceptsImage = (input) => {
+      const accept = lower(attrOf(input, 'accept'));
+      return !accept || accept.includes('image') || accept.includes('.png') || accept.includes('.jpg') || accept.includes('.jpeg') || accept.includes('.webp') || accept.includes('.gif') || accept.includes('.avif');
+    };
+    const findFileInput = () => Array.from(document.querySelectorAll('input[type="file"]'))
+      .find((node) => node instanceof HTMLInputElement && acceptsImage(node)) || null;
+    const countAttachmentSignals = () => {
+      const fileName = clean(referenceFile.name);
+      const text = clean(document.body?.innerText || document.body?.textContent || '');
+      const hasFileName = Boolean(fileName && text.includes(fileName));
+      const previews = Array.from(document.querySelectorAll('img, [data-testid*="attachment"], [data-testid*="upload"], [aria-label*="Remove"], [aria-label*="移除"]'))
+        .filter((node) => isVisible(node)).length;
+      return { hasFileName, previews };
+    };
+
+    return (async () => {
+      const input = findFileInput();
+      if (!(input instanceof HTMLInputElement)) {
+        return { ok: false, reason: 'No image file input was found on the ChatGPT image page.' };
+      }
+      const before = countAttachmentSignals();
+      const file = new File([bytesFromBase64(referenceFile.base64)], referenceFile.name || 'reference.png', { type: referenceFile.mimeType || 'image/png', lastModified: Date.now() });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      input.files = dataTransfer.files;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      let latest = before;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await waitFor(250);
+        latest = countAttachmentSignals();
+        if (latest.hasFileName || latest.previews > before.previews) {
+          return {
+            ok: true,
+            fileName: referenceFile.name || file.name,
+            mimeType: referenceFile.mimeType || file.type,
+            confirmed: true,
+            inputAccept: attrOf(input, 'accept'),
+          };
+        }
+      }
+      return {
+        ok: true,
+        fileName: referenceFile.name || file.name,
+        mimeType: referenceFile.mimeType || file.type,
+        confirmed: false,
+        inputAccept: attrOf(input, 'accept'),
+        reason: 'File was assigned to the image input, but no visible attachment preview was detected before timeout.',
+      };
+    })();
+  })(${JSON.stringify(fileSpec)})`;
+}
+
+export async function uploadChatGPTImageReference(page, fileSpec) {
+  if (!fileSpec?.base64) return { ok: false, reason: 'No reference image payload was provided.' };
+  const result = await page.evaluate(buildImageReferenceUploadScript(fileSpec)).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image upload result.' };
+}
+
 function buildImageCreateStateScript() {
   return `(() => {
     const clean = (value) => String(value ?? '')

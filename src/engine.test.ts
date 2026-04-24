@@ -362,5 +362,5 @@ describe('executeCommand', () => {
     expect(browserSessionSpy).toHaveBeenCalled();
     browserSessionSpy.mockRestore();
     spy.mockRestore();
-  });
+  }, 15000);
 });

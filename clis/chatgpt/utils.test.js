@@ -3,7 +3,9 @@ import {
   deleteChatGPTConversation,
   getChatGPTConversationList,
   renameChatGPTConversation,
+  selectChatGPTImageAspect,
   selectChatGPTImageMode,
+  uploadChatGPTImageReference,
 } from './utils.js';
 
 class FakeHTMLElement {
@@ -20,8 +22,22 @@ class FakeHTMLElement {
     return this._attrs.get(name) ?? '';
   }
 
+  dispatchEvent() {}
+
+  querySelectorAll() {
+    return [];
+  }
+
   getBoundingClientRect() {
     return { width: 100, height: 20 };
+  }
+}
+
+class FakeHTMLInputElement extends FakeHTMLElement {
+  constructor(attrs = {}) {
+    super();
+    this._attrs = new Map(Object.entries(attrs));
+    this.files = [];
   }
 }
 
@@ -114,6 +130,104 @@ describe('chatgpt utils', () => {
       selectedLabel: 'Extended',
     }));
     expect(clicked).toEqual(['selector', 'Extended']);
+  });
+
+  it('selects a visible ChatGPT image aspect ratio option', async () => {
+    const clicked = [];
+    const option = new FakeHTMLElement({ text: '16:9' });
+    option.click = () => { clicked.push('16:9'); };
+    const page = {
+      evaluate: vi.fn(async (script) => {
+        const windowObject = {
+          getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+        };
+        const documentObject = {
+          querySelectorAll: (selector) => {
+            if (selector.includes('[data-radix-popper-content-wrapper]')) return [];
+            if (selector.includes('button')) return [option];
+            return [];
+          },
+          body: { dispatchEvent: () => {} },
+        };
+        return await Function('window', 'document', 'HTMLElement', 'Element', 'MouseEvent', `return (${script});`)(
+          windowObject,
+          documentObject,
+          FakeHTMLElement,
+          FakeHTMLElement,
+          class MouseEvent {},
+        );
+      }),
+    };
+
+    await expect(selectChatGPTImageAspect(page, '16:9')).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      selectedLabel: '16:9',
+    }));
+    expect(clicked).toEqual(['16:9']);
+  });
+
+  it('assigns a reference image payload to a ChatGPT image file input', async () => {
+    let bodyText = '';
+    const input = new FakeHTMLInputElement({ accept: 'image/png,image/jpeg' });
+    input.dispatchEvent = (event) => {
+      if (event?.type === 'change') bodyText = 'reference.png';
+    };
+    const page = {
+      evaluate: vi.fn(async (script) => {
+        class FakeFile {
+          constructor(chunks, name, opts = {}) {
+            this.chunks = chunks;
+            this.name = name;
+            this.type = opts.type || '';
+          }
+        }
+        class FakeDataTransfer {
+          constructor() {
+            this._files = [];
+            this.items = { add: (file) => this._files.push(file) };
+          }
+          get files() { return this._files; }
+        }
+        class FakeEvent {
+          constructor(type) { this.type = type; }
+        }
+        const windowObject = {
+          getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+        };
+        const documentObject = {
+          body: {
+            get innerText() { return bodyText; },
+            get textContent() { return bodyText; },
+          },
+          querySelectorAll: (selector) => {
+            if (selector === 'input[type="file"]') return [input];
+            return [];
+          },
+        };
+        return await Function('window', 'document', 'HTMLElement', 'HTMLInputElement', 'Element', 'File', 'DataTransfer', 'Event', 'atob', `return (${script});`)(
+          windowObject,
+          documentObject,
+          FakeHTMLElement,
+          FakeHTMLInputElement,
+          FakeHTMLElement,
+          FakeFile,
+          FakeDataTransfer,
+          FakeEvent,
+          atob,
+        );
+      }),
+    };
+
+    await expect(uploadChatGPTImageReference(page, {
+      name: 'reference.png',
+      mimeType: 'image/png',
+      base64: Buffer.from('png').toString('base64'),
+    })).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      fileName: 'reference.png',
+      confirmed: true,
+    }));
+    expect(input.files[0].name).toBe('reference.png');
   });
 
   it('navigates to the target conversation before renaming via sidebar actions', async () => {

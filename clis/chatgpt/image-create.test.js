@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@jackwener/opencli/registry', () => ({
@@ -18,8 +21,10 @@ const {
   mockReadCreateState,
   mockRenameConversation,
   mockResolveConversation,
+  mockSelectAspect,
   mockSelectMode,
   mockSendPrompt,
+  mockUploadReferenceImage,
   mockWaitForState,
 } = vi.hoisted(() => ({
   mockBuildRow: vi.fn((snapshot, extra = {}) => ({
@@ -44,8 +49,10 @@ const {
   mockReadCreateState: vi.fn(),
   mockRenameConversation: vi.fn(),
   mockResolveConversation: vi.fn(),
+  mockSelectAspect: vi.fn(),
   mockSelectMode: vi.fn(),
   mockSendPrompt: vi.fn(),
+  mockUploadReferenceImage: vi.fn(),
   mockWaitForState: vi.fn(),
 }));
 
@@ -63,8 +70,10 @@ vi.mock('./utils.js', () => ({
   readChatGPTImageCreateState: mockReadCreateState,
   renameChatGPTConversation: mockRenameConversation,
   resolveChatGPTConversationForQuery: mockResolveConversation,
+  selectChatGPTImageAspect: mockSelectAspect,
   selectChatGPTImageMode: mockSelectMode,
   sendChatGPTImagePrompt: mockSendPrompt,
+  uploadChatGPTImageReference: mockUploadReferenceImage,
   waitForChatGPTImageCreateState: mockWaitForState,
 }));
 
@@ -72,8 +81,10 @@ import { imageCreateCommand } from './image-create.js';
 
 describe('chatgpt/image-create', () => {
   const page = {};
+  const referenceFile = path.join(os.tmpdir(), 'opencli-chatgpt-reference.png');
 
   beforeEach(() => {
+    fs.writeFileSync(referenceFile, Buffer.from('89504e470d0a1a0a', 'hex'));
     vi.clearAllMocks();
     mockReadCapabilities.mockResolvedValue({
       url: 'https://chatgpt.com/images/',
@@ -92,7 +103,9 @@ describe('chatgpt/image-create', () => {
     ]);
     mockParseConversationUrl.mockReturnValue(null);
     mockResolveConversation.mockReturnValue({ Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' });
+    mockSelectAspect.mockResolvedValue({ ok: true, skipped: true, selectedLabel: '', currentLabel: '', availableLabels: [] });
     mockSelectMode.mockResolvedValue({ ok: true, skipped: true, selectedLabel: '', currentLabel: '', availableLabels: [] });
+    mockUploadReferenceImage.mockResolvedValue({ ok: true, fileName: 'opencli-chatgpt-reference.png', confirmed: true });
     mockReadCreateState.mockResolvedValue({
       pageUrl: 'https://chatgpt.com/c/dish123',
       pathname: '/c/dish123',
@@ -316,6 +329,79 @@ describe('chatgpt/image-create', () => {
       reason: 'thinking-unavailable',
       detail: 'No model / thinking option matched: Thinking. Available: ChatGPT, Extended',
     }]);
+  });
+
+  it('uploads a local reference image before sending the prompt when --file is provided', async () => {
+    const result = await imageCreateCommand.func(page, {
+      prompt: '把这张图改成赛博朋克风格',
+      file: referenceFile,
+    });
+
+    expect(mockUploadReferenceImage).toHaveBeenCalledWith(page, expect.objectContaining({
+      path: referenceFile,
+      name: 'opencli-chatgpt-reference.png',
+      mimeType: 'image/png',
+      base64: expect.any(String),
+    }));
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, '把这张图改成赛博朋克风格');
+    expect(mockUploadReferenceImage.mock.invocationCallOrder[0]).toBeLessThan(mockSendPrompt.mock.invocationCallOrder[0]);
+    expect(result[0].status).toBe('submitted');
+  });
+
+  it('returns blocked when the requested reference image file is missing', async () => {
+    const result = await imageCreateCommand.func(page, {
+      prompt: 'use this as reference',
+      file: path.join(os.tmpdir(), 'opencli-missing-reference-image.png'),
+    });
+
+    expect(mockUploadReferenceImage).not.toHaveBeenCalled();
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([expect.objectContaining({
+      status: 'blocked',
+      reason: 'file-unavailable',
+    })]);
+  });
+
+  it('selects the requested aspect ratio before sending the prompt', async () => {
+    await imageCreateCommand.func(page, {
+      prompt: '做一张横版海报',
+      aspect: '16:9',
+    });
+
+    expect(mockSelectAspect).toHaveBeenCalledWith(page, '16:9');
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, '做一张横版海报');
+    expect(mockSelectAspect.mock.invocationCallOrder[0]).toBeLessThan(mockSendPrompt.mock.invocationCallOrder[0]);
+  });
+
+  it('uses --size as an alias for aspect ratio selection', async () => {
+    await imageCreateCommand.func(page, {
+      prompt: '做一张竖版海报',
+      size: '9:16',
+    });
+
+    expect(mockSelectAspect).toHaveBeenCalledWith(page, '9:16');
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, '做一张竖版海报');
+  });
+
+  it('returns blocked when the requested aspect ratio cannot be selected', async () => {
+    mockSelectAspect.mockResolvedValue({
+      ok: false,
+      reason: 'aspect-option-not-found',
+      currentLabel: '1:1',
+      availableLabels: ['1:1', '9:16'],
+    });
+
+    const result = await imageCreateCommand.func(page, {
+      prompt: '做一张横版海报',
+      aspect: '16:9',
+    });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([expect.objectContaining({
+      status: 'blocked',
+      reason: 'aspect-unavailable',
+      detail: 'No image aspect / size option matched: 16:9. Available: 1:1, 9:16',
+    })]);
   });
 
   it('renames the resulting thread when --title is provided', async () => {

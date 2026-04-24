@@ -3503,6 +3503,24 @@
         "help": "Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt"
       },
       {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Optional local reference image path to upload before sending the prompt (image-to-image)"
+      },
+      {
+        "name": "aspect",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape"
+      },
+      {
+        "name": "size",
+        "type": "str",
+        "required": false,
+        "help": "Alias for --aspect"
+      },
+      {
         "name": "op",
         "type": "str",
         "default": "/Users/xlmini/Pictures/chatgpt",
@@ -3593,6 +3611,24 @@
         "type": "str",
         "required": false,
         "help": "Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt"
+      },
+      {
+        "name": "file",
+        "type": "str",
+        "required": false,
+        "help": "Optional local reference image path to upload before sending the prompt (image-to-image)"
+      },
+      {
+        "name": "aspect",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape"
+      },
+      {
+        "name": "size",
+        "type": "str",
+        "required": false,
+        "help": "Alias for --aspect"
       },
       {
         "name": "timeout",
