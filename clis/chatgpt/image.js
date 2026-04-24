@@ -1,5 +1,3 @@
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { imageCreateCommand } from './image-create.js';
 import { imageDownloadCommand } from './image-download.js';
@@ -51,14 +49,14 @@ export const imageCommand = cli({
     { name: 'file', required: false, help: 'Optional local reference image path to upload before sending the prompt (image-to-image)' },
     { name: 'aspect', required: false, help: 'Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape' },
     { name: 'size', required: false, help: 'Alias for --aspect' },
-    { name: 'op', default: path.join(os.homedir(), 'Pictures', 'chatgpt'), help: 'Output directory' },
+    { name: 'op', default: '~/Pictures/chatgpt', help: 'Output directory' },
     { name: 'timeout', default: DEFAULT_TIMEOUT, help: 'Max seconds to keep polling the generated thread for downloadable images before falling back to the ChatGPT link' },
     { name: 'sd', type: 'boolean', default: false, help: 'Skip download shorthand; only show ChatGPT link' },
   ],
   columns: ['status', 'file', 'link'],
   func: async (page, kwargs) => {
     const prompt = String(kwargs.prompt ?? '').trim();
-    const outputDir = kwargs.op || path.join(os.homedir(), 'Pictures', 'chatgpt');
+    const outputDir = kwargs.op || '~/Pictures/chatgpt';
     const timeout = String(kwargs.timeout ?? DEFAULT_TIMEOUT).trim() || DEFAULT_TIMEOUT;
     const history = String(kwargs.history ?? '').trim();
     const match = String(kwargs.match ?? 'contains').trim() || 'contains';

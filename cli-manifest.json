@@ -3523,7 +3523,7 @@
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/xlmini/Pictures/chatgpt",
+        "default": "~/Pictures/chatgpt",
         "required": false,
         "help": "Output directory"
       },
@@ -3682,7 +3682,7 @@
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/xlmini/Pictures/chatgpt",
+        "default": "~/Pictures/chatgpt",
         "required": false,
         "help": "Output directory"
       },
@@ -3736,7 +3736,7 @@
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/xlmini/Pictures/chatgpt",
+        "default": "~/Pictures/chatgpt",
         "required": false,
         "help": "Output directory for downloaded edited images"
       },
@@ -7421,7 +7421,7 @@
       {
         "name": "op",
         "type": "str",
-        "default": "/Users/xlmini/tmp/gemini-images",
+        "default": "~/tmp/gemini-images",
         "required": false,
         "help": "Output directory shorthand"
       },

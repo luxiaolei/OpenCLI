@@ -63,6 +63,14 @@ function normalizeBooleanFlag(value) {
   return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 }
 
+function expandHomePath(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 export function mergeChatGPTImageEditCandidates(preferredItems, fallbackItems) {
   const merged = [];
   const seen = new Set();
@@ -802,7 +810,7 @@ export const imageEditCommand = cli({
     { name: 'prompt', required: true, positional: true, help: 'Edit prompt to send for the selected ChatGPT image' },
     { name: 'url', required: false, help: 'Optional ChatGPT conversation URL to target a specific image-edit thread' },
     { name: 'image', required: false, help: '1-based image index. On /images it selects the visible image entry; with --url it selects the lightbox image when available (default: 1)', default: '1' },
-    { name: 'op', required: false, help: 'Output directory for downloaded edited images', default: path.join(os.homedir(), 'Pictures', 'chatgpt') },
+    { name: 'op', required: false, help: 'Output directory for downloaded edited images', default: '~/Pictures/chatgpt' },
     { name: 'sd', type: 'boolean', required: false, help: 'Skip download shorthand; only submit the edit and show the ChatGPT thread state', default: false },
     { name: 'timeout', required: false, help: 'Max seconds to keep polling the edit thread for downloadable results before falling back to the ChatGPT thread state (default: 30)', default: '30' },
   ],
@@ -811,7 +819,7 @@ export const imageEditCommand = cli({
     const prompt = String(kwargs.prompt ?? '').trim();
     const timeoutRaw = String(kwargs.timeout ?? '30').trim() || '30';
     const timeout = parseChatGPTPositiveInt(kwargs.timeout, 30);
-    const outputDir = String(kwargs.op || path.join(os.homedir(), 'Pictures', 'chatgpt')).trim();
+    const outputDir = expandHomePath(String(kwargs.op || '~/Pictures/chatgpt')).trim();
     const skipDownloadRaw = kwargs.sd;
     const skipDownload = skipDownloadRaw === '' || skipDownloadRaw === true || normalizeBooleanFlag(skipDownloadRaw);
     const targetUrlRaw = String(kwargs.url ?? '').trim();

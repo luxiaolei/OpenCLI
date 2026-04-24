@@ -22,6 +22,16 @@ function displayPath(filePath) {
     const home = os.homedir();
     return filePath.startsWith(home) ? `~${filePath.slice(home.length)}` : filePath;
 }
+function expandHomePath(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw)
+        return '';
+    if (raw === '~')
+        return os.homedir();
+    if (raw.startsWith('~/'))
+        return path.join(os.homedir(), raw.slice(2));
+    return raw;
+}
 function buildImagePrompt(prompt, options) {
     const extras = [];
     if (options.ratio)
@@ -57,7 +67,7 @@ export const imageCommand = cli({
         { name: 'prompt', positional: true, required: true, help: 'Image prompt to send to Gemini' },
         { name: 'rt', default: '1:1', help: 'Prompt-level ratio shorthand (not a native Gemini UI control): 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3' },
         { name: 'st', default: '', help: 'Prompt-level style shorthand, e.g. anime, icon, watercolor (not a native Gemini template selector)' },
-        { name: 'op', default: path.join(os.homedir(), 'tmp', 'gemini-images'), help: 'Output directory shorthand' },
+        { name: 'op', default: '~/tmp/gemini-images', help: 'Output directory shorthand' },
         { name: 'sd', type: 'boolean', default: false, help: 'Skip download shorthand; only show Gemini page link' },
     ],
     columns: ['status', 'file', 'link'],
@@ -65,7 +75,7 @@ export const imageCommand = cli({
         const prompt = kwargs.prompt;
         const ratio = normalizeRatio(String(kwargs.rt ?? '1:1'));
         const style = String(kwargs.st ?? '').trim();
-        const outputDir = kwargs.op || path.join(os.homedir(), 'tmp', 'gemini-images');
+        const outputDir = expandHomePath(kwargs.op || '~/tmp/gemini-images');
         const timeout = 120;
         const startFresh = true;
         const skipDownloadRaw = kwargs.sd;
