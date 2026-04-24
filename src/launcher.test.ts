@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ElectronAppEntry } from './electron-apps.js';
-import { detectProcess, discoverAppPath, launchDetachedApp, launchElectronApp, probeCDP, resolveExecutableCandidates } from './launcher.js';
+import { detectProcess, discoverAppPath, isChromeCDPVersionPayload, launchDetachedApp, launchElectronApp, probeCDP, resolveChromeEndpoint, resolveExecutableCandidates } from './launcher.js';
 
 interface MockChildProcess {
   once: ReturnType<typeof vi.fn>;
@@ -42,6 +42,81 @@ describe('probeCDP', () => {
   it('returns false when CDP endpoint is unreachable', async () => {
     const result = await probeCDP(59999, 500);
     expect(result).toBe(false);
+  });
+});
+
+describe('resolveChromeEndpoint', () => {
+  it('recognizes Chrome CDP version payloads but rejects Electron endpoints', () => {
+    expect(isChromeCDPVersionPayload({ Browser: 'Chrome/142.0.0.0', 'User-Agent': 'Mozilla/5.0 Chrome/142 Safari/537.36' })).toBe(true);
+    expect(isChromeCDPVersionPayload({ Browser: 'Chrome/142.0.0.0', 'User-Agent': 'Mozilla/5.0 Electron/38 Chrome/142 Safari/537.36' })).toBe(false);
+  });
+
+  it('prefers an already-listening Chrome CDP endpoint and creates a safe fresh target', async () => {
+    const launchChrome = vi.fn();
+    const createChromeTarget = vi.fn().mockResolvedValue('ws://127.0.0.1:9222/devtools/page/safe-tab');
+
+    await expect(resolveChromeEndpoint({}, {
+      probeChromeCDP: vi.fn().mockResolvedValue(true),
+      createChromeTarget,
+      launchChrome,
+      pollForReady: vi.fn(),
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    })).resolves.toBe('ws://127.0.0.1:9222/devtools/page/safe-tab');
+
+    expect(createChromeTarget).toHaveBeenCalledWith(9222, undefined);
+    expect(launchChrome).not.toHaveBeenCalled();
+  });
+
+  it('launches Google Chrome with the default logged-in profile when CDP is not already listening', async () => {
+    const launchChrome = vi.fn().mockResolvedValue(undefined);
+    const pollForReady = vi.fn().mockResolvedValue(undefined);
+    const createChromeTarget = vi.fn().mockResolvedValue('ws://127.0.0.1:9333/devtools/page/fresh-tab');
+
+    await expect(resolveChromeEndpoint({ port: 9333 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(false),
+      createChromeTarget,
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      launchChrome,
+      pollForReady,
+    })).resolves.toBe('ws://127.0.0.1:9333/devtools/page/fresh-tab');
+
+    expect(launchChrome).toHaveBeenCalledWith(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      expect.arrayContaining([
+        '--remote-debugging-port=9333',
+        '--profile-directory=Default',
+        '--no-first-run',
+        '--no-default-browser-check',
+      ]),
+    );
+    const launchArgs = launchChrome.mock.calls[0][1] as string[];
+    expect(launchArgs.some((arg) => arg.startsWith('--user-data-dir='))).toBe(false);
+    expect(pollForReady).toHaveBeenCalledWith(9333);
+    expect(createChromeTarget).toHaveBeenCalledWith(9333, undefined);
+  });
+
+  it('falls back when the default port is occupied by a non-Chrome CDP endpoint', async () => {
+    const launchChrome = vi.fn();
+
+    await expect(resolveChromeEndpoint({ port: 9222 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(true),
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      launchChrome,
+    })).resolves.toBeUndefined();
+
+    expect(launchChrome).not.toHaveBeenCalled();
+  });
+
+  it('falls back when Chrome auto-launch or readiness polling fails', async () => {
+    await expect(resolveChromeEndpoint({ port: 9444 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(false),
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      launchChrome: vi.fn().mockResolvedValue(undefined),
+      pollForReady: vi.fn().mockRejectedValue(new Error('port never became ready')),
+    })).resolves.toBeUndefined();
   });
 });
 

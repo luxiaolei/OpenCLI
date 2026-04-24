@@ -23,6 +23,14 @@ function displayPath(filePath) {
   return filePath.startsWith(home) ? `~${filePath.slice(home.length)}` : filePath;
 }
 
+function expandHomePath(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 function normalizeBooleanFlag(value) {
   if (typeof value === 'boolean') return value;
   const normalized = String(value ?? '').trim().toLowerCase();
@@ -65,7 +73,7 @@ export const imageDownloadCommand = cli({
     { name: 'url', required: false, help: 'Optional ChatGPT conversation URL containing the image to download' },
     { name: 'image', required: false, help: '1-based visible image index to download (default: 1)', default: '1' },
     { name: 'all', type: 'boolean', required: false, help: 'Download all visible images instead of only the selected index', default: false },
-    { name: 'op', required: false, help: 'Output directory', default: path.join(os.homedir(), 'Pictures', 'chatgpt') },
+    { name: 'op', required: false, help: 'Output directory', default: '~/Pictures/chatgpt' },
     { name: 'timeout', required: false, help: 'Seconds to wait for a visible image before failing (default: 30)', default: '30' },
   ],
   columns: ['status', 'file', 'link'],
@@ -74,7 +82,7 @@ export const imageDownloadCommand = cli({
     const imageIndex = parseChatGPTPositiveInt(kwargs.image, 1);
     const downloadAllRaw = kwargs.all;
     const downloadAll = downloadAllRaw === '' || downloadAllRaw === true || normalizeBooleanFlag(downloadAllRaw);
-    const outputDir = String(kwargs.op || path.join(os.homedir(), 'Pictures', 'chatgpt')).trim();
+    const outputDir = expandHomePath(String(kwargs.op || '~/Pictures/chatgpt')).trim();
     const timeout = parseChatGPTPositiveInt(kwargs.timeout, 30);
     const beforeUrls = normalizeStringList(kwargs.before_urls);
     const beforeUrlSet = new Set(beforeUrls);

@@ -340,6 +340,8 @@ describe('executeCommand', () => {
     const runtime = await import('./runtime.js');
     const spy = vi.spyOn(launcher, 'resolveElectronEndpoint')
       .mockResolvedValue('http://127.0.0.1:9236');
+    const chromeSpy = vi.spyOn(launcher, 'resolveChromeEndpoint')
+      .mockResolvedValue(undefined);
     const browserSessionSpy = vi.spyOn(runtime, 'browserSession')
       .mockImplementation(async (_factory, fn) => fn({
         goto: async () => undefined,
@@ -359,8 +361,10 @@ describe('executeCommand', () => {
 
     await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
     expect(spy).not.toHaveBeenCalled();
+    expect(chromeSpy).toHaveBeenCalled();
     expect(browserSessionSpy).toHaveBeenCalled();
     browserSessionSpy.mockRestore();
+    chromeSpy.mockRestore();
     spy.mockRestore();
   }, 15000);
 });

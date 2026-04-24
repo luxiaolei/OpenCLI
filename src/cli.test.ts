@@ -8,11 +8,15 @@ import { TargetError } from './browser/target-errors.js';
 const {
   mockBrowserConnect,
   mockBrowserClose,
+  mockCDPConnect,
+  mockCDPClose,
   browserState,
   mockMaybeBindWorkspaceToCurrentTab,
 } = vi.hoisted(() => ({
   mockBrowserConnect: vi.fn(),
   mockBrowserClose: vi.fn(),
+  mockCDPConnect: vi.fn(),
+  mockCDPClose: vi.fn(),
   browserState: { page: null as IPage | null },
   mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
 }));
@@ -23,15 +27,20 @@ vi.mock('./browser/workspace-reuse.js', () => ({
 
 vi.mock('./browser/index.js', () => {
   mockBrowserConnect.mockImplementation(async () => browserState.page as IPage);
+  mockCDPConnect.mockImplementation(async () => browserState.page as IPage);
   return {
     BrowserBridge: class {
       connect = mockBrowserConnect;
       close = mockBrowserClose;
     },
+    CDPBridge: class {
+      connect = mockCDPConnect;
+      close = mockCDPClose;
+    },
   };
 });
 
-import { createProgram, findPackageRoot, resolveBrowserVerifyInvocation } from './cli.js';
+import { createProgram, findPackageRoot, normalizeVerifyRows, renderVerifyPreview, resolveBrowserVerifyInvocation } from './cli.js';
 
 describe('resolveBrowserVerifyInvocation', () => {
   it('prefers the built entry declared in package metadata', () => {
@@ -119,8 +128,12 @@ describe('browser tab targeting commands', () => {
     consoleLogSpy.mockClear();
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
+    mockCDPConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
+    mockCDPClose.mockReset().mockResolvedValue(undefined);
     mockMaybeBindWorkspaceToCurrentTab.mockReset().mockResolvedValue(false);
+    delete process.env.OPENCLI_CDP_ENDPOINT;
+    delete process.env.OPENCLI_AUTO_CHROME_CDP;
 
     browserState.page = {
       goto: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +142,7 @@ describe('browser tab targeting commands', () => {
       getActivePage: vi.fn().mockReturnValue('tab-1'),
       getCurrentUrl: vi.fn().mockResolvedValue('https://one.example'),
       startNetworkCapture: vi.fn().mockResolvedValue(true),
+      getCookies: vi.fn().mockResolvedValue([]),
       evaluate: vi.fn().mockResolvedValue({ ok: true }),
       tabs: vi.fn().mockResolvedValue([
         { index: 0, page: 'tab-1', url: 'https://one.example', title: 'one', active: true },
@@ -153,6 +167,44 @@ describe('browser tab targeting commands', () => {
     expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
   });
+
+  it('uses direct CDP for browser commands when OPENCLI_CDP_ENDPOINT is already set', async () => {
+    process.env.OPENCLI_CDP_ENDPOINT = 'http://127.0.0.1:9222';
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockCDPConnect).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 30,
+      workspace: 'browser:default',
+      cdpEndpoint: 'http://127.0.0.1:9222',
+    }));
+    expect(mockBrowserConnect).not.toHaveBeenCalled();
+    expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  it('keeps browser commands on BrowserBridge unless CDP is explicitly requested', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockBrowserConnect).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 30,
+      workspace: 'browser:default',
+    }));
+    expect(mockCDPConnect).not.toHaveBeenCalled();
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  function lastJsonLog(): any {
+    const calls = consoleLogSpy.mock.calls;
+    if (calls.length === 0) throw new Error('Expected at least one console.log call');
+    const last = calls[calls.length - 1][0];
+    if (typeof last !== 'string') throw new Error(`Expected string arg to console.log, got ${typeof last}`);
+    return JSON.parse(last);
+  }
 
   it('binds browser commands to an explicit target tab via --tab', async () => {
     const program = createProgram('', '');
@@ -252,6 +304,23 @@ describe('browser tab targeting commands', () => {
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"selected": "tab-2"');
   });
 
+  it('rejects selecting a target tab that is not present in the current session', async () => {
+    browserState.page = {
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn(),
+      tabs: vi.fn().mockResolvedValue([]),
+      selectTab: vi.fn(),
+      evaluate: vi.fn(),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'tab', 'select', 'tab-stale']);
+
+    expect(process.exitCode).toBeDefined();
+    expect(browserState.page?.selectTab).not.toHaveBeenCalled();
+    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
+  });
+
   it('clears a saved default target when it is no longer present in the current session and falls back to current-tab reuse', async () => {
     const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
     const program = createProgram('', '');
@@ -311,6 +380,215 @@ describe('browser tab targeting commands', () => {
     expect(process.exitCode).toBeDefined();
     expect(browserState.page?.closeTab).not.toHaveBeenCalled();
     expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
+  });
+
+  it('browser analyze merges HttpOnly cookie names from page.getCookies and drains stale capture before verdict', async () => {
+    browserState.page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn().mockReturnValue('tab-1'),
+      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
+      startNetworkCapture: vi.fn().mockResolvedValue(true),
+      getCookies: vi.fn().mockResolvedValue([{ name: 'cf_clearance', value: 'x', domain: '.target.example' }]),
+      evaluate: vi.fn().mockResolvedValue({
+        cookieNames: [],
+        initialState: {
+          __INITIAL_STATE__: false,
+          __NUXT__: false,
+          __NEXT_DATA__: false,
+          __APOLLO_STATE__: false,
+        },
+        title: 'Target',
+        finalUrl: 'https://target.example/',
+      }),
+      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
+      readNetworkCapture: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            url: 'https://stale.example/api/old',
+            method: 'GET',
+            responseStatus: 200,
+            responseContentType: 'application/json',
+            responsePreview: '{"stale":true}',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            url: 'https://target.example/waf',
+            method: 'GET',
+            responseStatus: 403,
+            responseContentType: 'text/html',
+            responsePreview: 'Cloudflare Ray ID',
+          },
+        ]),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'analyze', 'https://target.example/']);
+
+    const out = lastJsonLog();
+    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
+    expect(out.anti_bot.vendor).toBe('cloudflare');
+    expect(out.anti_bot.evidence).toContain('cookie:cf_clearance');
+  });
+
+  it('browser analyze falls back to interceptor buffer when network capture is unsupported', async () => {
+    let bufferReads = 0;
+    browserState.page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn().mockReturnValue('tab-1'),
+      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
+      startNetworkCapture: vi.fn().mockResolvedValue(false),
+      getCookies: vi.fn().mockResolvedValue([{ name: 'cf_clearance', value: 'x', domain: '.target.example' }]),
+      evaluate: vi.fn().mockImplementation(async (arg: string) => {
+        if (typeof arg === 'string' && arg.includes('document.cookie')) {
+          return {
+            cookieNames: [],
+            initialState: {
+              __INITIAL_STATE__: false,
+              __NUXT__: false,
+              __NEXT_DATA__: false,
+              __APOLLO_STATE__: false,
+            },
+            title: 'Target',
+            finalUrl: 'https://target.example/',
+          };
+        }
+        if (typeof arg === 'string' && arg.includes('window.__opencli_net = []')) {
+          bufferReads += 1;
+          if (bufferReads === 1) {
+            return JSON.stringify([
+              {
+                url: 'https://stale.example/api/old',
+                method: 'GET',
+                status: 200,
+                size: 12,
+                ct: 'application/json',
+                body: { stale: true },
+              },
+            ]);
+          }
+          return JSON.stringify([
+            {
+              url: 'https://target.example/waf',
+              method: 'GET',
+              status: 403,
+              size: 17,
+              ct: 'text/html',
+              body: 'Cloudflare Ray ID',
+            },
+          ]);
+        }
+        return undefined;
+      }),
+      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
+      readNetworkCapture: vi.fn().mockResolvedValue([]),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'analyze', 'https://target.example/']);
+
+    const out = lastJsonLog();
+    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
+    expect(bufferReads).toBe(2);
+    expect(out.anti_bot.vendor).toBe('cloudflare');
+    expect(out.anti_bot.evidence).toContain('cookie:cf_clearance');
+    expect(out.anti_bot.evidence).toContain('body:https://target.example/waf');
+  });
+
+  it('browser wait xhr starts capture, injects interceptor on fallback, and ignores stale ring entries', async () => {
+    browserState.page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn().mockReturnValue('tab-1'),
+      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
+      startNetworkCapture: vi.fn().mockResolvedValue(false),
+      evaluate: vi.fn().mockResolvedValue(undefined),
+      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
+      readNetworkCapture: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            url: 'https://stale.example/api/old',
+            method: 'GET',
+            responseStatus: 200,
+            responseContentType: 'application/json',
+            responsePreview: '{"stale":true}',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            url: 'https://target.example/api/target',
+            method: 'GET',
+            responseStatus: 200,
+            responseContentType: 'application/json',
+            responsePreview: '{"ok":true}',
+          },
+        ]),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'wait', 'xhr', '/api/target', '--timeout', '900']);
+
+    const out = lastJsonLog();
+    expect(browserState.page?.startNetworkCapture).toHaveBeenCalledTimes(1);
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith(expect.stringContaining('window.__opencli_net'));
+    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
+    expect(out.matched.url).toBe('https://target.example/api/target');
+  });
+
+  it('browser wait xhr reads interceptor buffer when network capture is unsupported', async () => {
+    let bufferReads = 0;
+    browserState.page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      wait: vi.fn().mockResolvedValue(undefined),
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn().mockReturnValue('tab-1'),
+      getCurrentUrl: vi.fn().mockResolvedValue('https://target.example'),
+      startNetworkCapture: vi.fn().mockResolvedValue(false),
+      evaluate: vi.fn().mockImplementation(async (arg: string) => {
+        if (typeof arg === 'string' && arg.includes('window.__opencli_net = []')) {
+          bufferReads += 1;
+          if (bufferReads === 1) {
+            return JSON.stringify([
+              {
+                url: 'https://stale.example/api/old',
+                method: 'GET',
+                status: 200,
+                size: 12,
+                ct: 'application/json',
+                body: { stale: true },
+              },
+            ]);
+          }
+          return JSON.stringify([
+            {
+              url: 'https://target.example/api/target',
+              method: 'GET',
+              status: 200,
+              size: 11,
+              ct: 'application/json',
+              body: { ok: true },
+            },
+          ]);
+        }
+        return undefined;
+      }),
+      tabs: vi.fn().mockResolvedValue([{ index: 0, page: 'tab-1', url: 'https://target.example', title: 'Target', active: true }]),
+      readNetworkCapture: vi.fn().mockResolvedValue([]),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'wait', 'xhr', '/api/target', '--timeout', '900']);
+
+    const out = lastJsonLog();
+    expect(browserState.page?.startNetworkCapture).toHaveBeenCalledTimes(1);
+    expect(browserState.page?.readNetworkCapture).toHaveBeenCalledTimes(2);
+    expect(bufferReads).toBe(2);
+    expect(out.matched.url).toBe('https://target.example/api/target');
   });
 });
 
@@ -1322,5 +1600,62 @@ describe('findPackageRoot', () => {
     ]);
 
     expect(findPackageRoot(cliFile, (candidate) => exists.has(candidate))).toBe(packageRoot);
+  });
+});
+
+describe('normalizeVerifyRows', () => {
+  it('returns an empty array for null / primitives', () => {
+    expect(normalizeVerifyRows(null)).toEqual([]);
+    expect(normalizeVerifyRows(undefined)).toEqual([]);
+    expect(normalizeVerifyRows('hello')).toEqual([]);
+  });
+
+  it('passes through array-of-objects', () => {
+    const rows = [{ a: 1 }, { a: 2 }];
+    expect(normalizeVerifyRows(rows)).toEqual(rows);
+  });
+
+  it('wraps array-of-primitives as { value } rows', () => {
+    expect(normalizeVerifyRows([1, 'two', null])).toEqual([
+      { value: 1 }, { value: 'two' }, { value: null },
+    ]);
+  });
+
+  it('unwraps common envelope shapes', () => {
+    expect(normalizeVerifyRows({ rows: [{ a: 1 }] })).toEqual([{ a: 1 }]);
+    expect(normalizeVerifyRows({ items: [{ b: 2 }] })).toEqual([{ b: 2 }]);
+    expect(normalizeVerifyRows({ data: [{ c: 3 }] })).toEqual([{ c: 3 }]);
+    expect(normalizeVerifyRows({ results: [{ d: 4 }] })).toEqual([{ d: 4 }]);
+  });
+
+  it('wraps a single object as a one-row array', () => {
+    expect(normalizeVerifyRows({ ok: true })).toEqual([{ ok: true }]);
+  });
+});
+
+describe('renderVerifyPreview', () => {
+  it('emits a placeholder for empty rows', () => {
+    expect(renderVerifyPreview([])).toContain('no rows');
+  });
+
+  it('prints column headers followed by row cells', () => {
+    const out = renderVerifyPreview([{ a: 'x', b: 1 }, { a: 'y', b: 2 }]);
+    const lines = out.split('\n');
+    expect(lines[0]).toContain('a');
+    expect(lines[0]).toContain('b');
+    expect(lines.some((l) => l.includes('x') && l.includes('1'))).toBe(true);
+    expect(lines.some((l) => l.includes('y') && l.includes('2'))).toBe(true);
+  });
+
+  it('truncates long cells and reports hidden rows / columns', () => {
+    const rows = Array.from({ length: 15 }, (_, i) => ({
+      a: i, b: 'x'.repeat(100), c: i, d: i, e: i, f: i, g: i, h: i,
+    }));
+    const out = renderVerifyPreview(rows, { maxRows: 5, maxCols: 3, cellMax: 10 });
+    expect(out).toContain('and 10 more row');
+    expect(out).toContain('more column');
+    // cell gets truncated
+    expect(out).toContain('xxxxxxxxxx');
+    expect(out).not.toContain('xxxxxxxxxxx'); // never 11 consecutive
   });
 });
