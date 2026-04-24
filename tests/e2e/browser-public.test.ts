@@ -320,8 +320,12 @@ describe('browser public-data commands E2E', () => {
 
   it('tieba posts page 2 returns a different forum slice', async () => {
     const data1 = await runJsonCliOrThrow(['tieba', 'posts', '李毅', '--page', '1', '--limit', '5', '-f', 'json'], 'tieba posts page 1', 60_000, { retryTransient: true });
+    if (!expectNonEmptyDataOrSkipEnv(data1, 'tieba posts page 1')) {
+      return;
+    }
+
     const data2 = await runJsonCliOrThrow(['tieba', 'posts', '李毅', '--page', '2', '--limit', '5', '-f', 'json'], 'tieba posts page 2', 60_000, { retryTransient: true });
-    if (expectNonEmptyDataOrSkipEnv(data1, 'tieba posts page 1') && expectNonEmptyDataOrSkipEnv(data2, 'tieba posts page 2')) {
+    if (expectNonEmptyDataOrSkipEnv(data2, 'tieba posts page 2')) {
       const ids1 = data1.map((item: any) => String(item.id || '')).filter(Boolean);
       const ids2 = data2.map((item: any) => String(item.id || '')).filter(Boolean);
       const newIds = ids2.filter((id) => !ids1.includes(id));
