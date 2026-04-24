@@ -1,12 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliCommand } from './registry.js';
 
-const { mockMaybeBindWorkspaceToCurrentTab } = vi.hoisted(() => ({
+const { mockMaybeBindWorkspaceToCurrentTab, mockResolveChromeEndpoint } = vi.hoisted(() => ({
   mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
+  mockResolveChromeEndpoint: vi.fn(),
 }));
 
 vi.mock('./browser/workspace-reuse.js', () => ({
   maybeBindWorkspaceToCurrentTab: mockMaybeBindWorkspaceToCurrentTab,
+}));
+
+vi.mock('./launcher.js', () => ({
+  probeCDP: vi.fn().mockResolvedValue(true),
+  resolveElectronEndpoint: vi.fn(),
+  resolveChromeEndpoint: mockResolveChromeEndpoint,
 }));
 
 import { executeCommand, prepareCommandArgs } from './execution.js';
@@ -17,6 +24,11 @@ import * as runtime from './runtime.js';
 import * as capRouting from './capabilityRouting.js';
 
 describe('executeCommand — non-browser timeout', () => {
+  beforeEach(() => {
+    mockMaybeBindWorkspaceToCurrentTab.mockReset().mockResolvedValue(false);
+    mockResolveChromeEndpoint.mockReset().mockResolvedValue(undefined);
+  });
+
   it('applies timeoutSeconds to non-browser commands', async () => {
     const cmd = cli({
       site: 'test-execution',
@@ -164,6 +176,38 @@ describe('executeCommand — non-browser timeout', () => {
     expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('site:chatgpt', { matchDomain: 'chatgpt.com' });
     expect(mockMaybeBindWorkspaceToCurrentTab.mock.invocationCallOrder[0]).toBeLessThan(goto.mock.invocationCallOrder[0]);
     vi.restoreAllMocks();
+    mockMaybeBindWorkspaceToCurrentTab.mockReset();
+  });
+
+  it('prefers default Chrome CDP for normal web adapters before falling back to BrowserBridge reuse', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const goto = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow, goto } as any;
+
+    mockResolveChromeEndpoint.mockResolvedValue('http://127.0.0.1:9333');
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+    const cmd = cli({
+      site: 'chatgpt',
+      name: 'browser-cdp-default-profile',
+      description: 'test default Chrome CDP for web adapters',
+      browser: true,
+      strategy: Strategy.COOKIE,
+      domain: 'chatgpt.com',
+      func: async () => [{ ok: true }],
+    });
+
+    await executeCommand(cmd, {});
+
+    expect(mockResolveChromeEndpoint).toHaveBeenCalledTimes(1);
+    expect(browserSessionSpy.mock.calls[0][2]).toMatchObject({
+      workspace: 'site:chatgpt',
+      cdpEndpoint: 'http://127.0.0.1:9333',
+    });
+    expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    mockResolveChromeEndpoint.mockReset();
     mockMaybeBindWorkspaceToCurrentTab.mockReset();
   });
 

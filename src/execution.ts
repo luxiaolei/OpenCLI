@@ -25,7 +25,7 @@ import { maybeBindWorkspaceToCurrentTab } from './browser/workspace-reuse.js';
 import { emitHook, type HookContext } from './hooks.js';
 import { log } from './logger.js';
 import { isElectronApp } from './electron-apps.js';
-import { probeCDP, resolveElectronEndpoint } from './launcher.js';
+import { probeCDP, resolveChromeEndpoint, resolveElectronEndpoint } from './launcher.js';
 
 const _loadedModules = new Map<string, Promise<void>>();
 /** Track mtime of loaded user adapter files for hot-reload in daemon mode. */
@@ -179,6 +179,7 @@ export async function executeCommand(
   let diagnosticEmitted = false;
   try {
     if (shouldUseBrowserSession(cmd)) {
+      ensureRequiredEnv(cmd);
       const electron = isElectronApp(cmd.site) && (!cmd.domain || cmd.domain === 'localhost' || cmd.domain === '127.0.0.1');
       let cdpEndpoint: string | undefined;
 
@@ -197,14 +198,17 @@ export async function executeCommand(
         } else {
           cdpEndpoint = await resolveElectronEndpoint(cmd.site);
         }
+      } else if (process.env.OPENCLI_CDP_ENDPOINT) {
+        cdpEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
+      } else {
+        cdpEndpoint = await resolveChromeEndpoint();
       }
 
-      ensureRequiredEnv(cmd);
-      const BrowserFactory = electron ? getBrowserFactory(cmd.site) : getBrowserFactory();
+      const BrowserFactory = electron ? getBrowserFactory(cmd.site) : (cdpEndpoint ? CDPBridge : getBrowserFactory());
       const workspace = `site:${cmd.site}`;
       const preNavUrl = resolvePreNav(cmd);
       result = await browserSession(BrowserFactory, async (page) => {
-        if (!electron && BrowserFactory !== CDPBridge) {
+        if (!electron && !cdpEndpoint && BrowserFactory !== CDPBridge) {
           await maybeBindWorkspaceToCurrentTab(workspace, cmd.domain ? { matchDomain: cmd.domain } : {});
         }
         if (preNavUrl) {

@@ -305,18 +305,24 @@ async function resolveStoredBrowserTarget(page: import('./types.js').IPage, scop
 
 /** Create a browser page for browser commands. Uses a dedicated browser workspace for session persistence. */
 async function getBrowserPage(targetPage?: string): Promise<import('./types.js').IPage> {
-  const { BrowserBridge } = await import('./browser/index.js');
-  const bridge = new BrowserBridge();
+  const { BrowserBridge, CDPBridge } = await import('./browser/index.js');
   const envTimeout = process.env.OPENCLI_BROWSER_TIMEOUT;
   const idleTimeout = envTimeout ? parseInt(envTimeout, 10) : undefined;
+  const cdpEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
+  const bridge = cdpEndpoint ? new CDPBridge() : new BrowserBridge();
   const page = await bridge.connect({
     timeout: 30,
     workspace: DEFAULT_BROWSER_WORKSPACE,
-    ...(idleTimeout && idleTimeout > 0 && { idleTimeout }),
+    ...(cdpEndpoint && { cdpEndpoint }),
+    ...(!cdpEndpoint && idleTimeout && idleTimeout > 0 && { idleTimeout }),
   });
   const storedDefaultTarget = loadBrowserTargetState(DEFAULT_BROWSER_WORKSPACE)?.defaultPage?.trim();
   let resolvedTargetPage: string | undefined;
-  if (targetPage) {
+  if (cdpEndpoint) {
+    if (targetPage) {
+      throw new Error('Explicit --tab targeting is not supported in direct CDP mode');
+    }
+  } else if (targetPage) {
     resolvedTargetPage = await resolveBrowserTargetInSession(page, targetPage, { scope: DEFAULT_BROWSER_WORKSPACE, source: 'explicit' });
   } else {
     if (!storedDefaultTarget) {
@@ -599,9 +605,16 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       if (!resolvedTarget) {
         throw new Error('Target tab required. Pass it as an argument or --tab <targetId>.');
       }
-      await page.selectTab(resolvedTarget);
-      saveBrowserTargetState(resolvedTarget, DEFAULT_BROWSER_WORKSPACE);
-      console.log(JSON.stringify({ selected: resolvedTarget }, null, 2));
+      const validatedTarget = await resolveBrowserTargetInSession(page, resolvedTarget, {
+        scope: DEFAULT_BROWSER_WORKSPACE,
+        source: 'explicit',
+      });
+      if (!validatedTarget) {
+        throw new Error(`Target tab ${resolvedTarget} is not part of the current browser session.`);
+      }
+      await page.selectTab(validatedTarget);
+      saveBrowserTargetState(validatedTarget, DEFAULT_BROWSER_WORKSPACE);
+      console.log(JSON.stringify({ selected: validatedTarget }, null, 2));
     }));
 
   addBrowserTabOption(browserTab.command('close')

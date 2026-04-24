@@ -12,6 +12,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ElectronAppEntry } from './electron-apps.js';
 import { getElectronApp } from './electron-apps.js';
@@ -23,6 +24,8 @@ const POLL_INTERVAL_MS = 500;
 const POLL_TIMEOUT_MS = 15_000;
 const PROBE_TIMEOUT_MS = 2_000;
 const KILL_GRACE_MS = 3_000;
+const DEFAULT_CHROME_CDP_PORT = 9222;
+const DEFAULT_CHROME_PROFILE_DIRECTORY = 'Default';
 
 /**
  * Probe whether a CDP endpoint is listening on the given port.
@@ -41,6 +44,213 @@ export function probeCDP(port: number, timeoutMs: number = PROBE_TIMEOUT_MS): Pr
     req.on('timeout', () => { req.destroy(); resolve(false); });
     req.end();
   });
+}
+
+export type ResolveChromeEndpointOptions = {
+  /** Chrome remote-debugging port. Defaults to OPENCLI_CHROME_CDP_PORT or 9222. */
+  port?: number;
+  /** Chrome profile directory inside the default Chrome user data dir. Defaults to Default. */
+  profileDirectory?: string;
+  /** First URL to open when launching Chrome. Defaults to about:blank. */
+  url?: string;
+  /** If false, only probe the port and never launch Chrome. */
+  launch?: boolean;
+};
+
+export type ResolveChromeEndpointDeps = {
+  probeChromeCDP?: (port: number) => Promise<boolean>;
+  probeAnyCDP?: (port: number) => Promise<boolean>;
+  createChromeTarget?: (port: number, url?: string) => Promise<string | undefined>;
+  discoverChromeExecutable?: () => string | null;
+  launchChrome?: (executable: string, args: string[]) => Promise<void> | void;
+  pollForReady?: (port: number) => Promise<void> | void;
+};
+
+function parseChromeCDPPort(): number {
+  const raw = process.env.OPENCLI_CHROME_CDP_PORT;
+  if (!raw) return DEFAULT_CHROME_CDP_PORT;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CHROME_CDP_PORT;
+}
+
+function isAutoChromeCDPDisabled(): boolean {
+  const raw = process.env.OPENCLI_AUTO_CHROME_CDP;
+  return raw !== undefined && ['0', 'false', 'no', 'off'].includes(raw.trim().toLowerCase());
+}
+
+export function buildChromeLaunchArgs(opts: ResolveChromeEndpointOptions = {}): string[] {
+  const port = opts.port ?? parseChromeCDPPort();
+  const profileDirectory = opts.profileDirectory?.trim() || process.env.OPENCLI_CHROME_PROFILE || DEFAULT_CHROME_PROFILE_DIRECTORY;
+  return [
+    `--remote-debugging-port=${port}`,
+    `--profile-directory=${profileDirectory}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    opts.url?.trim() || 'about:blank',
+  ];
+}
+
+export function discoverChromeExecutable(): string | null {
+  const explicit = process.env.OPENCLI_CHROME_PATH?.trim() || process.env.CHROME_PATH?.trim();
+  if (explicit) return explicit;
+
+  if (process.platform === 'darwin') {
+    const candidates = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      path.join(os.homedir(), 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome'),
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      path.join(os.homedir(), 'Applications', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+    ];
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+  }
+
+  if (process.platform === 'linux') {
+    const candidates = [
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+    ];
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? 'google-chrome';
+  }
+
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA;
+    const programFiles = process.env.PROGRAMFILES;
+    const programFilesX86 = process.env['PROGRAMFILES(X86)'];
+    const candidates = [
+      localAppData && path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      programFiles && path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      programFilesX86 && path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+  }
+
+  return null;
+}
+
+export async function launchChromeWithDebugPort(executable: string, args: string[]): Promise<void> {
+  await launchDetachedApp(executable, args, 'Google Chrome');
+}
+
+export function isChromeCDPVersionPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const record = payload as Record<string, unknown>;
+  const browser = typeof record.Browser === 'string' ? record.Browser : '';
+  const userAgent = typeof record['User-Agent'] === 'string' ? record['User-Agent'] : '';
+  const combined = `${browser} ${userAgent}`;
+  if (/electron/i.test(combined)) return false;
+  return /(chrome|chromium)\//i.test(combined);
+}
+
+export async function probeChromeCDP(port: number): Promise<boolean> {
+  try {
+    const payload = await fetchCDPVersion(port);
+    return isChromeCDPVersionPayload(payload);
+  } catch {
+    return false;
+  }
+}
+
+type ChromeCDPTargetPayload = {
+  webSocketDebuggerUrl?: string;
+};
+
+export async function createChromeTarget(port: number, url: string = 'about:blank'): Promise<string | undefined> {
+  try {
+    const target = await requestChromeJson(port, `/json/new?${encodeURIComponent(url)}`, 'PUT') as ChromeCDPTargetPayload;
+    return typeof target?.webSocketDebuggerUrl === 'string' ? target.webSocketDebuggerUrl : undefined;
+  } catch (err) {
+    log.debug(`[launcher] Failed to create Chrome CDP target on ${port}: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}
+
+function fetchCDPVersion(port: number, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<unknown> {
+  return requestChromeJson(port, '/json/version', 'GET', timeoutMs);
+}
+
+function requestChromeJson(port: number, requestPath: string, method: 'GET' | 'PUT', timeoutMs: number = PROBE_TIMEOUT_MS): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { hostname: '127.0.0.1', port, path: requestPath, method, timeout: timeoutMs },
+      (res) => {
+        const statusCode = res.statusCode ?? 0;
+        if (statusCode < 200 || statusCode >= 300) {
+          res.resume();
+          reject(new Error(`HTTP ${statusCode}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error(`Timed out requesting Chrome CDP ${requestPath}`)));
+    req.end();
+  });
+}
+
+async function pollForChromeReady(port: number): Promise<void> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (await probeChromeCDP(port)) return;
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  throw new CommandExecutionError(
+    `Chrome launched but CDP not available on port ${port} after ${POLL_TIMEOUT_MS / 1000}s`,
+    'Chrome may already be running without the debug port. Quit Chrome and rerun, or set OPENCLI_CDP_ENDPOINT to an existing debug endpoint.',
+  );
+}
+
+/**
+ * Resolve the default Chrome CDP endpoint for web commands.
+ *
+ * Priority:
+ * 1. reuse an already-listening Chrome CDP port
+ * 2. launch Google Chrome/Chromium with remote debugging enabled
+ *
+ * The launch intentionally does not pass --user-data-dir. Chrome therefore uses
+ * the user's normal logged-in Chrome profile instead of an isolated temp profile.
+ */
+export async function resolveChromeEndpoint(
+  opts: ResolveChromeEndpointOptions = {},
+  deps: ResolveChromeEndpointDeps = {},
+): Promise<string | undefined> {
+  if (isAutoChromeCDPDisabled()) return undefined;
+
+  const port = opts.port ?? parseChromeCDPPort();
+  const probe = deps.probeChromeCDP ?? probeChromeCDP;
+  const probeAny = deps.probeAnyCDP ?? probeCDP;
+  const createTarget = deps.createChromeTarget ?? createChromeTarget;
+  if (await probe(port)) return createTarget(port, opts.url);
+
+  // If some non-Chrome CDP endpoint already occupies the port (for example an
+  // Electron app), do not launch Chrome on top of it. Fall back to BrowserBridge.
+  if (await probeAny(port)) return undefined;
+
+  if (opts.launch === false) return undefined;
+
+  const discover = deps.discoverChromeExecutable ?? discoverChromeExecutable;
+  const executable = discover();
+  if (!executable) return undefined;
+
+  const args = buildChromeLaunchArgs({ ...opts, port });
+  try {
+    await (deps.launchChrome ?? launchChromeWithDebugPort)(executable, args);
+    await (deps.pollForReady ?? pollForChromeReady)(port);
+    return createTarget(port, opts.url);
+  } catch (err) {
+    log.debug(`[launcher] Chrome CDP auto-launch unavailable on ${port}: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
 }
 
 /**

@@ -8,11 +8,15 @@ import { TargetError } from './browser/target-errors.js';
 const {
   mockBrowserConnect,
   mockBrowserClose,
+  mockCDPConnect,
+  mockCDPClose,
   browserState,
   mockMaybeBindWorkspaceToCurrentTab,
 } = vi.hoisted(() => ({
   mockBrowserConnect: vi.fn(),
   mockBrowserClose: vi.fn(),
+  mockCDPConnect: vi.fn(),
+  mockCDPClose: vi.fn(),
   browserState: { page: null as IPage | null },
   mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
 }));
@@ -23,10 +27,15 @@ vi.mock('./browser/workspace-reuse.js', () => ({
 
 vi.mock('./browser/index.js', () => {
   mockBrowserConnect.mockImplementation(async () => browserState.page as IPage);
+  mockCDPConnect.mockImplementation(async () => browserState.page as IPage);
   return {
     BrowserBridge: class {
       connect = mockBrowserConnect;
       close = mockBrowserClose;
+    },
+    CDPBridge: class {
+      connect = mockCDPConnect;
+      close = mockCDPClose;
     },
   };
 });
@@ -119,8 +128,12 @@ describe('browser tab targeting commands', () => {
     consoleLogSpy.mockClear();
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
+    mockCDPConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
+    mockCDPClose.mockReset().mockResolvedValue(undefined);
     mockMaybeBindWorkspaceToCurrentTab.mockReset().mockResolvedValue(false);
+    delete process.env.OPENCLI_CDP_ENDPOINT;
+    delete process.env.OPENCLI_AUTO_CHROME_CDP;
 
     browserState.page = {
       goto: vi.fn().mockResolvedValue(undefined),
@@ -151,6 +164,36 @@ describe('browser tab targeting commands', () => {
 
     await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
 
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  it('uses direct CDP for browser commands when OPENCLI_CDP_ENDPOINT is already set', async () => {
+    process.env.OPENCLI_CDP_ENDPOINT = 'http://127.0.0.1:9222';
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockCDPConnect).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 30,
+      workspace: 'browser:default',
+      cdpEndpoint: 'http://127.0.0.1:9222',
+    }));
+    expect(mockBrowserConnect).not.toHaveBeenCalled();
+    expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  it('keeps browser commands on BrowserBridge unless CDP is explicitly requested', async () => {
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockBrowserConnect).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 30,
+      workspace: 'browser:default',
+    }));
+    expect(mockCDPConnect).not.toHaveBeenCalled();
     expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
   });
@@ -259,6 +302,23 @@ describe('browser tab targeting commands', () => {
     expect(browserState.page?.setActivePage).toHaveBeenCalledWith('tab-2');
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"selected": "tab-2"');
+  });
+
+  it('rejects selecting a target tab that is not present in the current session', async () => {
+    browserState.page = {
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn(),
+      tabs: vi.fn().mockResolvedValue([]),
+      selectTab: vi.fn(),
+      evaluate: vi.fn(),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync(['node', 'opencli', 'browser', 'tab', 'select', 'tab-stale']);
+
+    expect(process.exitCode).toBeDefined();
+    expect(browserState.page?.selectTab).not.toHaveBeenCalled();
+    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
   });
 
   it('clears a saved default target when it is no longer present in the current session and falls back to current-tab reuse', async () => {
