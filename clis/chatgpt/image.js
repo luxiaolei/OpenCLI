@@ -30,6 +30,17 @@ function mapCreateStatusToLegacyStatus(status) {
   return '⚠️ failed';
 }
 
+function hasDownloadableConversationTarget(createRow, pageUrl) {
+  const conversationId = String(createRow?.conversation_id ?? '').trim();
+  if (conversationId) return true;
+  try {
+    const parsed = new URL(pageUrl);
+    return parsed.hostname.endsWith(CHATGPT_DOMAIN) && parsed.pathname.startsWith('/c/');
+  } catch {
+    return false;
+  }
+}
+
 export const imageCommand = cli({
   site: 'chatgpt',
   name: 'image',
@@ -77,7 +88,7 @@ export const imageCommand = cli({
       return buildLegacyImageRow(mapCreateStatusToLegacyStatus(createStatus), pageUrl);
     }
 
-    if (skipDownload) {
+    if (skipDownload || !hasDownloadableConversationTarget(createRow, pageUrl)) {
       return buildLegacyImageRow(mapCreateStatusToLegacyStatus(createStatus), pageUrl);
     }
 

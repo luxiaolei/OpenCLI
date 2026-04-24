@@ -120,6 +120,34 @@ describe('chatgpt/image legacy shorthand', () => {
     ]);
   });
 
+  it('does not poll downloads when create returns only the /images workbench link', async () => {
+    mockCreateFunc.mockResolvedValue([
+      {
+        action: 'create',
+        status: 'submitted',
+        page_url: 'https://chatgpt.com/images/',
+        page_title: 'ChatGPT Image 2.0',
+        account_tier: 'Pro',
+        conversation_id: '',
+      },
+    ]);
+
+    const rows = await imageCommand.func(page, {
+      prompt: 'slow image generation',
+      op: '/tmp/chatgpt',
+      timeout: '6',
+    });
+
+    expect(mockDownloadFunc).not.toHaveBeenCalled();
+    expect(rows).toEqual([
+      {
+        status: '⏳ submitted',
+        file: '📁 -',
+        link: '🔗 https://chatgpt.com/images/',
+      },
+    ]);
+  });
+
   it('retries auto-download polling until generated images become visible', async () => {
     mockCreateFunc.mockResolvedValue([
       {
