@@ -167,6 +167,48 @@ describe('chatgpt utils', () => {
     }));
   });
 
+  it('treats /images with a visible composer as image context even when the localized placeholder is generic', async () => {
+    const promptTextarea = new FakeHTMLElement();
+    promptTextarea._attrs.set('placeholder', '与 ChatGPT 聊天');
+    const mainRoot = new FakeHTMLElement();
+    mainRoot.querySelectorAll = (selector) => {
+      if (selector.includes('textarea') || selector.includes('[contenteditable')) return [promptTextarea];
+      return [];
+    };
+
+    const page = {
+      evaluate: vi.fn(async (script) => {
+        const windowObject = {
+          location: {
+            href: 'https://chatgpt.com/images/',
+            pathname: '/images/',
+          },
+          getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+          PointerEvent: class PointerEvent {},
+          MouseEvent: class MouseEvent {},
+        };
+        const documentObject = {
+          querySelectorAll: (selector) => (selector === 'main' || selector === '[role="main"]') ? [mainRoot] : [],
+          body: { dispatchEvent: () => {} },
+        };
+        return await Function('window', 'document', 'HTMLElement', 'Element', 'MouseEvent', `return (${script});`)(
+          windowObject,
+          documentObject,
+          FakeHTMLElement,
+          FakeHTMLElement,
+          class MouseEvent {},
+        );
+      }),
+    };
+
+    await expect(enterChatGPTImageComposer(page)).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      method: 'images-page',
+      pagePath: '/images/',
+      promptPlaceholder: '与 ChatGPT 聊天',
+    }));
+  });
+
   it('treats an in-thread image composer as valid image context outside /images', () => {
     expect(hasChatGPTImageContext({
       url: 'https://chatgpt.com/c/image-thread',

@@ -1218,6 +1218,7 @@ function buildEnterImageComposerScript() {
           /描述(新图片|或编辑图片)|describe (a )?new image|describe or edit image/i.test(promptPlaceholder)
           || imageModeButton
           || aspectButton
+          || (currentPath.startsWith('/images') && composer)
         ),
       };
     };
@@ -1911,7 +1912,7 @@ function buildImageCreatePromptScript(prompt) {
     }
 
     return (async () => {
-      for (let attempt = 0; attempt < 10; attempt += 1) {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
         let sendButton = findFirstVisible(${sendSelectorsJson});
         if (!(sendButton instanceof HTMLElement)) {
           sendButton = Array.from(document.querySelectorAll('button, [role="button"]'))
@@ -1931,7 +1932,7 @@ function buildImageCreatePromptScript(prompt) {
           };
         }
 
-        await waitFor(300);
+        await waitFor(500);
       }
 
       return {
