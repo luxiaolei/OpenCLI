@@ -62,6 +62,7 @@ import {
   imageEditInternals,
   mergeChatGPTImageEditCandidates,
   readChatGPTImageEditState,
+  waitForChatGPTImageEditModal,
   waitForChatGPTImageEditState,
 } from './image-edit.js';
 
@@ -275,6 +276,14 @@ describe('chatgpt/image-edit', () => {
         pageTitle: 'ChatGPT',
         accountTier: 'Pro',
         modalVisible: true,
+        editComposerVisible: false,
+        resultActionLabels: ['编辑'],
+      })
+      .mockResolvedValueOnce({
+        pageUrl: 'https://chatgpt.com/c/thread123',
+        pageTitle: 'ChatGPT',
+        accountTier: 'Pro',
+        modalVisible: true,
         editComposerVisible: true,
         editPromptPlaceholder: '描述编辑',
       });
@@ -309,6 +318,44 @@ describe('chatgpt/image-edit', () => {
         conversation_id: 'edit123',
       },
     ]);
+  });
+
+  it('waits for the fullscreen editor to settle before sending a thread-targeted edit prompt', async () => {
+    const page = {
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, source: 'conversation-thread' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/thread123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      modalVisible: true,
+      editComposerVisible: true,
+      editPromptPlaceholder: '',
+    });
+    vi.spyOn(imageEditInternals, 'selectChatGPTImageInLightbox').mockResolvedValue({ ok: true, selectedIndex: 2, mode: 'thumbnail-strip' });
+    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
+      status: 'submitted',
+      pageUrl: 'https://chatgpt.com/c/thread123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      conversationId: 'thread123',
+      loadingHeadlines: ['正在创建图片'],
+      resultActions: [],
+      resultActionLabels: [],
+    });
+
+    await imageEditCommand.func(page, {
+      prompt: 'make it blue',
+      url: 'https://chatgpt.com/c/thread123',
+      image: '2',
+      sd: 'true',
+    });
+
+    expect(page.wait).toHaveBeenNthCalledWith(1, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(2, { time: 1 });
+    expect(imageEditInternals.sendChatGPTImageEditPrompt).toHaveBeenCalledWith(page, 'make it blue');
   });
 
   it('downloads the edited result automatically by default', async () => {
@@ -558,7 +605,34 @@ describe('chatgpt/image-edit helpers', () => {
 
     expect(result.status).toBe('result_visible');
     expect(result.conversationId).toBe('edit999');
-    expect(page.wait).toHaveBeenCalledTimes(2);
+    expect(page.wait).toHaveBeenNthCalledWith(1, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(2, { time: 1 });
+  });
+
+  it('uses fixed settle waits while polling for the image edit composer', async () => {
+    const snapshots = [
+      {
+        url: 'https://chatgpt.com/c/thread123',
+        modalVisible: true,
+        editComposerVisible: false,
+        resultActionLabels: [],
+      },
+      {
+        url: 'https://chatgpt.com/c/thread123',
+        modalVisible: true,
+        editComposerVisible: true,
+        editPromptPlaceholder: '',
+      },
+    ];
+    const page = {
+      evaluate: vi.fn().mockImplementation(() => Promise.resolve(snapshots.shift() ?? snapshots.at(-1))),
+      wait: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await waitForChatGPTImageEditModal(page, 2);
+
+    expect(result.editComposerVisible).toBe(true);
+    expect(page.wait).toHaveBeenCalledWith({ time: 1 });
   });
 
   it('falls back to submitted when a new edit thread is still loading at timeout', async () => {
@@ -576,6 +650,7 @@ describe('chatgpt/image-edit helpers', () => {
 
     expect(result.status).toBe('submitted');
     expect(result.conversationId).toBe('edit123');
-    expect(page.wait).toHaveBeenCalledTimes(2);
+    expect(page.wait).toHaveBeenNthCalledWith(1, { time: 1 });
+    expect(page.wait).toHaveBeenNthCalledWith(2, { time: 1 });
   });
 });

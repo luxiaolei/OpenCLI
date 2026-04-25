@@ -71,6 +71,15 @@ function expandHomePath(value) {
   return raw;
 }
 
+async function waitForChatGPTImageSettle(page, seconds = 1) {
+  if (!page || typeof page.wait !== 'function') return;
+  try {
+    await page.wait({ time: seconds });
+  } catch {
+    await page.wait(seconds);
+  }
+}
+
 export function mergeChatGPTImageEditCandidates(preferredItems, fallbackItems) {
   const merged = [];
   const seen = new Set();
@@ -660,7 +669,7 @@ export async function waitForChatGPTImageOpenTarget(page, openIndex = 1, timeout
   let lastResult = await openChatGPTImageForEdit(page, openIndex);
   if (lastResult?.ok) return lastResult;
   for (let attempt = 0; attempt < timeout; attempt += 1) {
-    await page.wait(1);
+    await waitForChatGPTImageSettle(page);
     lastResult = await openChatGPTImageForEdit(page, openIndex);
     if (lastResult?.ok) return lastResult;
   }
@@ -728,7 +737,7 @@ export async function waitForChatGPTImageEditModal(page, timeoutSeconds = 10) {
   let lastSnapshot = await readChatGPTImageEditState(page);
   if (hasChatGPTImageEditComposer(lastSnapshot)) return lastSnapshot;
   for (let attempt = 0; attempt < timeout; attempt += 1) {
-    await page.wait(1);
+    await waitForChatGPTImageSettle(page);
     lastSnapshot = await readChatGPTImageEditState(page);
     if (hasChatGPTImageEditComposer(lastSnapshot)) return lastSnapshot;
   }
@@ -761,7 +770,7 @@ export async function waitForChatGPTImageEditState(page, timeoutSeconds = 30, ba
   }
 
   for (let attempt = 0; attempt < timeout; attempt += 1) {
-    await page.wait(1);
+    await waitForChatGPTImageSettle(page);
     lastSnapshot = await readChatGPTImageEditState(page);
     if (hasChatGPTImageEditResultVisibleSignal(lastSnapshot, baselineConversationId)) {
       return {
@@ -879,6 +888,9 @@ export const imageEditCommand = cli({
       })];
     }
 
+    if (targetUrl || openResult?.modalVisible) {
+      await waitForChatGPTImageSettle(page);
+    }
     let readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
 
     if (targetUrl) {
@@ -891,9 +903,13 @@ export const imageEditCommand = cli({
         })];
       }
 
+      await waitForChatGPTImageSettle(page);
+      readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
+
       if (!hasChatGPTImageEditComposer(readySnapshot)) {
         const openComposerResult = await imageEditInternals.openChatGPTImageEditComposer(page);
         if (openComposerResult?.ok) {
+          await waitForChatGPTImageSettle(page);
           readySnapshot = await imageEditInternals.waitForChatGPTImageEditModal(page, 10);
         }
       }

@@ -921,10 +921,24 @@ function buildImageCapabilitiesScript() {
     const lower = (value) => clean(value).toLowerCase();
     const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
     const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const triggerClick = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { node.focus({ preventScroll: true }); } catch {}
+      try {
+        const EventCtor = window.PointerEvent || window.MouseEvent;
+        node.dispatchEvent(new EventCtor('pointerdown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+      } catch {}
+      try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.click(); } catch { return false; }
+      return true;
+    };
 
     const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
     const accountButton = queryVisible(document, '[data-testid="accounts-profile-button"]');
-    const promptInput = Array.from(mainRoot.querySelectorAll('textarea')).find((node) => isVisible(node)) || null;
+    const promptInput = Array.from(mainRoot.querySelectorAll('textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"]'))
+      .find((node) => isVisible(node)) || null;
     const modelSelector = queryVisible(document, '[data-testid="model-switcher-dropdown-button"]')
       || Array.from(document.querySelectorAll('button, [role="button"]')).find((node) => {
         if (!isVisible(node)) return false;
@@ -937,6 +951,16 @@ function buildImageCapabilitiesScript() {
         const label = lower(attrOf(node, 'aria-label') || textOf(node));
         return label.includes('添加文件等') || label.includes('add file');
       }) || null;
+    const imageModeButton = Array.from(mainRoot.querySelectorAll('button, [role="button"]')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label === '图片' || label === 'image' || label.includes('图片，点击以重试') || label.includes('image, click to retry');
+    }) || null;
+    const aspectButton = Array.from(mainRoot.querySelectorAll('button, [role="button"]')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label.includes('image aspect ratio') || label.includes('宽高比') || label === '自动' || label === 'auto';
+    }) || null;
     const voiceButton = Array.from(mainRoot.querySelectorAll('button')).find((node) => {
       if (!isVisible(node)) return false;
       const label = lower(attrOf(node, 'aria-label') || textOf(node));
@@ -948,6 +972,13 @@ function buildImageCapabilitiesScript() {
         const label = lower(attrOf(node, 'aria-label') || textOf(node));
         return label.includes('发送提示') || label.includes('send prompt');
       }) || null;
+
+    const promptPlaceholder = attrOf(promptInput, 'placeholder') || attrOf(promptInput, 'aria-label');
+    const isImageComposer = Boolean(
+      /描述(新图片|或编辑图片)|describe (a )?new image|describe or edit image/i.test(promptPlaceholder)
+      || imageModeButton
+      || aspectButton
+    );
 
     const findSectionByHeading = (heading) => Array.from(mainRoot.querySelectorAll('section')).find((section) => isVisible(section) && textOf(section).includes(heading)) || null;
     const collectSectionButtons = (section) => uniq(Array.from(section ? section.querySelectorAll('button') : []).filter((button) => isVisible(button)).map((button) => {
@@ -981,7 +1012,7 @@ function buildImageCapabilitiesScript() {
       const seen = new Set();
       const labels = [];
       for (const root of menuRoots) {
-        const candidates = [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')];
+        const candidates = Array.from(root.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button, [role="button"], [data-radix-collection-item], [tabindex]'));
         for (const node of candidates) {
           if (!isVisible(node)) continue;
           const label = clean(attrOf(node, 'aria-label') || textOf(node));
@@ -998,7 +1029,7 @@ function buildImageCapabilitiesScript() {
 
     let modelOptions = [];
     if (modelSelector instanceof HTMLElement) {
-      modelSelector.click();
+      triggerClick(modelSelector);
       for (let attempt = 0; attempt < 4; attempt += 1) {
         await waitFor(160);
         modelOptions = collectModelOptions();
@@ -1014,8 +1045,10 @@ function buildImageCapabilitiesScript() {
       accountTier: textOf(accountButton).includes('Pro') ? 'Pro' : '',
       modelSelectorLabel: textOf(modelSelector) || attrOf(modelSelector, 'aria-label'),
       modelOptions,
-      promptPlaceholder: attrOf(promptInput, 'placeholder') || attrOf(promptInput, 'aria-label'),
+      promptPlaceholder,
       addButtonLabel: attrOf(addButton, 'aria-label') || textOf(addButton),
+      imageModeButtonLabel: imageModeButton ? (attrOf(imageModeButton, 'aria-label') || textOf(imageModeButton)) : '',
+      aspectButtonLabel: aspectButton ? (attrOf(aspectButton, 'aria-label') || textOf(aspectButton)) : '',
       voiceButtonLabel: attrOf(voiceButton, 'aria-label') || textOf(voiceButton),
       sendButtonLabel: attrOf(sendButton, 'aria-label') || textOf(sendButton),
       dragDropText: textOf(dragDropNode),
@@ -1024,6 +1057,7 @@ function buildImageCapabilitiesScript() {
       taskCards: collectSectionButtons(taskSection),
       resultActions,
       isImagesPage: (window.location.pathname || '').startsWith('/images'),
+      isImageComposer,
     };
   })())`;
 }
@@ -1044,6 +1078,8 @@ export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
     modelOptions: asArray(snapshot?.modelOptions),
     promptPlaceholder: String(snapshot?.promptPlaceholder ?? '').trim(),
     addButtonLabel: String(snapshot?.addButtonLabel ?? '').trim(),
+    imageModeButtonLabel: String(snapshot?.imageModeButtonLabel ?? '').trim(),
+    aspectButtonLabel: String(snapshot?.aspectButtonLabel ?? '').trim(),
     voiceButtonLabel: String(snapshot?.voiceButtonLabel ?? '').trim(),
     sendButtonLabel: String(snapshot?.sendButtonLabel ?? '').trim(),
     dragDropText: String(snapshot?.dragDropText ?? '').trim(),
@@ -1052,6 +1088,7 @@ export function normalizeChatGPTImageCapabilitySnapshot(snapshot) {
     taskCards: asArray(snapshot?.taskCards),
     resultActions: asArray(snapshot?.resultActions),
     isImagesPage: Boolean(snapshot?.isImagesPage),
+    isImageComposer: Boolean(snapshot?.isImageComposer),
     isSignedIn: inferredSignedIn,
   };
 }
@@ -1076,19 +1113,20 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
     return rows;
   }
 
-  if (!normalized.isImagesPage) {
-    push('state', 'status', 'absent');
-    push('state', 'reason', 'not-images-page');
-    return rows;
-  }
-
   const imageContextVisible = Boolean(
-    normalized.styleCards.length > 0
+    normalized.isImageComposer
+    || normalized.styleCards.length > 0
     || normalized.taskCards.length > 0
     || normalized.resultActions.length > 0
     || normalized.dragDropText
     || normalized.uploadInputs.length > 0
   );
+
+  if (!normalized.isImagesPage && !imageContextVisible) {
+    push('state', 'status', 'absent');
+    push('state', 'reason', 'not-images-page');
+    return rows;
+  }
 
   if (!imageContextVisible) {
     push('state', 'status', 'absent');
@@ -1101,6 +1139,8 @@ export function buildChatGPTImageCapabilityRows(snapshot) {
   normalized.modelOptions.forEach((item) => push('composer', 'model_option', item));
   push('composer', 'prompt_placeholder', normalized.promptPlaceholder);
   push('composer', 'add_button', normalized.addButtonLabel);
+  push('composer', 'image_mode_button', normalized.imageModeButtonLabel);
+  push('composer', 'aspect_button', normalized.aspectButtonLabel);
   push('composer', 'voice_button', normalized.voiceButtonLabel);
   push('composer', 'send_button', normalized.sendButtonLabel);
   push('upload', 'drag_drop', normalized.dragDropText || (normalized.uploadInputs.length ? 'supported' : ''));
@@ -1116,6 +1156,179 @@ export async function openChatGPTImages(page) {
   await page.wait({ time: 1 });
 }
 
+function buildEnterImageComposerScript() {
+  const imageComposerSelectorsJson = JSON.stringify(CHATGPT_IMAGE_COMPOSER_SELECTORS);
+  return `((async () => {
+    const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+    const lower = (value) => clean(value).toLowerCase();
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label'), attrOf(node, 'title')].filter(Boolean).join(' '));
+    const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
+    const triggerClick = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { node.focus({ preventScroll: true }); } catch {}
+      try {
+        const EventCtor = window.PointerEvent || window.MouseEvent;
+        node.dispatchEvent(new EventCtor('pointerdown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+      } catch {}
+      try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.click(); } catch { return false; }
+      return true;
+    };
+    const currentPath = window.location.pathname || '';
+    const currentUrl = window.location.href;
+    const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
+    const findImageComposer = () => Array.from(mainRoot.querySelectorAll(${imageComposerSelectorsJson}.join(',')))
+      .find((node) => isVisible(node)) || null;
+    const findImageModeButton = () => Array.from(mainRoot.querySelectorAll('button, [role="button"]')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label === '图片' || label === 'image' || label.includes('图片，点击以重试') || label.includes('image, click to retry');
+    }) || null;
+    const findAspectButton = () => Array.from(mainRoot.querySelectorAll('button, [role="button"]')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label.includes('image aspect ratio') || label.includes('宽高比') || label === '自动' || label === 'auto';
+    }) || null;
+    const detectImageContext = () => {
+      const composer = findImageComposer();
+      const promptPlaceholder = attrOf(composer, 'placeholder') || attrOf(composer, 'aria-label');
+      const imageModeButton = findImageModeButton();
+      const aspectButton = findAspectButton();
+      return {
+        composer,
+        promptPlaceholder,
+        imageModeButton,
+        aspectButton,
+        active: Boolean(
+          currentPath.startsWith('/images')
+          || /描述(新图片|或编辑图片)|describe (a )?new image|describe or edit image/i.test(promptPlaceholder)
+          || imageModeButton
+          || aspectButton
+        ),
+      };
+    };
+    const initial = detectImageContext();
+    if (initial.active) {
+      return {
+        ok: true,
+        method: currentPath.startsWith('/images') ? 'images-page' : 'already-image-composer',
+        pageUrl: currentUrl,
+        pagePath: currentPath,
+        promptPlaceholder: initial.promptPlaceholder,
+        imageModeButtonLabel: initial.imageModeButton ? combinedLabel(initial.imageModeButton) : '',
+        aspectButtonLabel: initial.aspectButton ? combinedLabel(initial.aspectButton) : '',
+      };
+    }
+
+    const plusButton = queryVisible(mainRoot, '#composer-plus-btn')
+      || Array.from(mainRoot.querySelectorAll('button, [role="button"]')).find((node) => {
+        if (!isVisible(node)) return false;
+        const label = lower(attrOf(node, 'aria-label') || textOf(node));
+        return label.includes('添加文件等') || label.includes('add photo') || label.includes('add files') || label.includes('add photos and files');
+      }) || null;
+    if (!(plusButton instanceof HTMLElement)) {
+      return { ok: false, reason: 'plus-button-not-found', pageUrl: currentUrl, pagePath: currentPath };
+    }
+
+    triggerClick(plusButton);
+    const collectMenuOptions = () => {
+      const menuRoots = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper], [role="menu"], [role="dialog"], [data-state="open"]'))
+        .filter((node) => isVisible(node));
+      const seen = new Set();
+      const options = [];
+      for (const root of menuRoots) {
+        const candidates = Array.from(root.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button, [role="button"], a, [tabindex]'));
+        for (const node of candidates) {
+          if (!isVisible(node)) continue;
+          const label = combinedLabel(node);
+          if (!label || label.length > 80) continue;
+          const normalized = lower(label);
+          if (seen.has(normalized)) continue;
+          seen.add(normalized);
+          options.push({ node, label, normalized, role: attrOf(node, 'role') });
+        }
+      }
+      return options;
+    };
+
+    let options = [];
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await waitFor(140);
+      options = collectMenuOptions();
+      if (options.length > 0) break;
+    }
+    const createImage = options
+      .filter((option) => option.normalized.includes('创建图片') || (option.normalized.includes('create') && option.normalized.includes('image')))
+      .sort((a, b) => {
+        const aExact = a.normalized === '创建图片' || a.normalized === 'create image';
+        const bExact = b.normalized === '创建图片' || b.normalized === 'create image';
+        const aScore = (aExact ? 20 : 0) + ((a.role === 'menuitemradio' || a.role === 'menuitem' || a.role === 'option') ? 10 : 0);
+        const bScore = (bExact ? 20 : 0) + ((b.role === 'menuitemradio' || b.role === 'menuitem' || b.role === 'option') ? 10 : 0);
+        return bScore - aScore;
+      })[0] || null;
+    if (!(createImage?.node instanceof HTMLElement)) {
+      return {
+        ok: false,
+        reason: options.length > 0 ? 'create-image-option-not-found' : 'plus-menu-not-open',
+        pageUrl: currentUrl,
+        pagePath: currentPath,
+        availableLabels: options.map((option) => option.label),
+      };
+    }
+
+    triggerClick(createImage.node);
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      await waitFor(180);
+      const next = detectImageContext();
+      if (next.active) {
+        return {
+          ok: true,
+          method: 'plus-menu',
+          selectedLabel: createImage.label,
+          pageUrl: window.location.href,
+          pagePath: window.location.pathname || '',
+          promptPlaceholder: next.promptPlaceholder,
+          imageModeButtonLabel: next.imageModeButton ? combinedLabel(next.imageModeButton) : '',
+          aspectButtonLabel: next.aspectButton ? combinedLabel(next.aspectButton) : '',
+        };
+      }
+    }
+
+    return {
+      ok: false,
+      reason: 'image-context-not-entered',
+      pageUrl: window.location.href,
+      pagePath: window.location.pathname || '',
+      selectedLabel: createImage.label,
+      availableLabels: options.map((option) => option.label),
+    };
+  })())`;
+}
+
+export async function enterChatGPTImageComposer(page) {
+  const result = await page.evaluate(buildEnterImageComposerScript()).catch(async (error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    pageUrl: await getCurrentChatGPTUrl(page),
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image entry result.' };
+}
+
 export async function readChatGPTImageCapabilities(page) {
   const snapshot = await page.evaluate(buildImageCapabilitiesScript()).catch(async (error) => ({
     url: await getCurrentChatGPTUrl(page),
@@ -1128,8 +1341,8 @@ function buildImageModeSelectionScript(requestedMode) {
   return `((requestedLabel) => {
     const waitFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const clean = (value) => String(value ?? '')
-      .replace(/\u00a0/g, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
       .trim();
     const lower = (value) => clean(value).toLowerCase();
     const isVisible = (node) => {
@@ -1141,6 +1354,19 @@ function buildImageModeSelectionScript(requestedMode) {
     };
     const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
     const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const triggerClick = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { node.focus({ preventScroll: true }); } catch {}
+      try {
+        const EventCtor = window.PointerEvent || window.MouseEvent;
+        node.dispatchEvent(new EventCtor('pointerdown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+      } catch {}
+      try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.click(); } catch { return false; }
+      return true;
+    };
     const currentQuery = lower(requestedLabel);
     if (!currentQuery) return { ok: true, skipped: true };
 
@@ -1168,7 +1394,7 @@ function buildImageModeSelectionScript(requestedMode) {
       const seen = new Set();
       const options = [];
       for (const root of menuRoots) {
-        const candidates = [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')];
+        const candidates = Array.from(root.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button, [role="button"], [data-radix-collection-item], [tabindex]'));
         for (const node of candidates) {
           if (!isVisible(node)) continue;
           const label = clean(attrOf(node, 'aria-label') || textOf(node));
@@ -1183,7 +1409,7 @@ function buildImageModeSelectionScript(requestedMode) {
     };
 
     return (async () => {
-      modelSelector.click();
+      triggerClick(modelSelector);
       let options = [];
       for (let attempt = 0; attempt < 5; attempt += 1) {
         await waitFor(180);
@@ -1192,7 +1418,13 @@ function buildImageModeSelectionScript(requestedMode) {
       }
 
       const exact = options.find((option) => option.normalized === currentQuery) || null;
-      const partial = exact || options.find((option) => option.normalized.includes(currentQuery)) || null;
+      const partial = exact || options
+        .filter((option) => option.normalized.includes(currentQuery))
+        .sort((a, b) => {
+          const aScore = (a.normalized.startsWith(currentQuery) ? 10 : 0) - a.label.length;
+          const bScore = (b.normalized.startsWith(currentQuery) ? 10 : 0) - b.label.length;
+          return bScore - aScore;
+        })[0] || null;
       if (!partial?.node || !(partial.node instanceof HTMLElement)) {
         document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         return {
@@ -1203,7 +1435,7 @@ function buildImageModeSelectionScript(requestedMode) {
         };
       }
 
-      partial.node.click();
+      triggerClick(partial.node);
       await waitFor(180);
       return {
         ok: true,
@@ -1246,21 +1478,42 @@ function buildImageAspectSelectionScript(requestedAspect) {
     const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
     const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
     const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label'), attrOf(node, 'title')].filter(Boolean).join(' '));
+    const triggerClick = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+      try { node.focus({ preventScroll: true }); } catch {}
+      try {
+        const EventCtor = window.PointerEvent || window.MouseEvent;
+        node.dispatchEvent(new EventCtor('pointerdown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+      } catch {}
+      try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, composed: true, button: 0 })); } catch {}
+      try { node.click(); } catch { return false; }
+      return true;
+    };
     const queryRaw = clean(requestedLabel);
     const query = compact(queryRaw);
     if (!query) return { ok: true, skipped: true };
 
     const aliasesByQuery = new Map([
+      ['auto', ['auto', 'automatic', '自动']],
+      ['自动', ['auto', 'automatic', '自动']],
       ['square', ['square', '1:1', '方形', '正方形']],
       ['方形', ['square', '1:1', '方形', '正方形']],
       ['正方形', ['square', '1:1', '方形', '正方形']],
-      ['landscape', ['landscape', '16:9', '横向', '横版', '宽屏']],
-      ['横向', ['landscape', '16:9', '横向', '横版', '宽屏']],
-      ['横版', ['landscape', '16:9', '横向', '横版', '宽屏']],
-      ['portrait', ['portrait', '9:16', '纵向', '竖向', '竖版']],
-      ['纵向', ['portrait', '9:16', '纵向', '竖向', '竖版']],
-      ['竖向', ['portrait', '9:16', '纵向', '竖向', '竖版']],
-      ['竖版', ['portrait', '9:16', '纵向', '竖向', '竖版']],
+      ['landscape', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
+      ['横向', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
+      ['横版', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
+      ['横屏', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
+      ['wide', ['wide', 'widescreen', '16:9', '宽屏']],
+      ['widescreen', ['wide', 'widescreen', '16:9', '宽屏']],
+      ['宽屏', ['wide', 'widescreen', '16:9', '宽屏']],
+      ['portrait', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
+      ['纵向', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
+      ['竖向', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
+      ['竖版', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
+      ['story', ['story', '9:16', '故事']],
+      ['故事', ['story', '9:16', '故事']],
     ]);
     const wanted = new Set([query, lower(queryRaw), ...((aliasesByQuery.get(query) || aliasesByQuery.get(lower(queryRaw)) || []).map((item) => compact(item)))]);
     const ratioPattern = /\\b\\d+\\s*[:：]\\s*\\d+\\b/;
@@ -1276,14 +1529,20 @@ function buildImageAspectSelectionScript(requestedAspect) {
         || value.includes('尺寸')
         || value.includes('横向')
         || value.includes('横版')
+        || value.includes('横屏')
+        || value.includes('宽屏')
         || value.includes('竖向')
         || value.includes('竖版')
         || value.includes('纵向')
+        || value.includes('故事')
         || value.includes('方形')
         || value.includes('正方形')
+        || flat === 'auto'
+        || flat === '自动'
         || flat.includes('square')
         || flat.includes('portrait')
-        || flat.includes('landscape');
+        || flat.includes('landscape')
+        || flat.includes('widescreen');
     };
     const matchesWanted = (label) => {
       const value = lower(label);
@@ -1312,7 +1571,7 @@ function buildImageAspectSelectionScript(requestedAspect) {
       const roots = Array.from(document.querySelectorAll('[data-radix-popper-content-wrapper], [role="menu"], [role="listbox"], [data-state="open"]'))
         .filter((node) => isVisible(node));
       const candidates = roots.length > 0
-        ? roots.flatMap((root) => [root, ...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], [data-radix-collection-item]')])
+        ? roots.flatMap((root) => Array.from(root.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button, [role="button"], [data-radix-collection-item], [tabindex]')))
         : allClickable();
       const seen = new Set();
       const options = [];
@@ -1338,7 +1597,7 @@ function buildImageAspectSelectionScript(requestedAspect) {
 
       const direct = visibleOptions.find((option) => matchesWanted(option.label)) || null;
       if (direct?.node instanceof HTMLElement) {
-        direct.node.click();
+        triggerClick(direct.node);
         await waitFor(180);
         return { ok: true, selectedLabel: direct.label, currentLabel: '', availableLabels: visibleOptions.map((option) => option.label) };
       }
@@ -1356,14 +1615,14 @@ function buildImageAspectSelectionScript(requestedAspect) {
       for (const trigger of sortedTriggers.slice(0, 8)) {
         const triggerLabel = combinedLabel(trigger);
         tried.push(triggerLabel);
-        trigger.click();
+        triggerClick(trigger);
         for (let attempt = 0; attempt < 5; attempt += 1) {
           await waitFor(160);
           const options = collectOptions();
           if (options.length > 0) lastOptions = options;
           const found = options.find((option) => matchesWanted(option.label));
           if (found?.node instanceof HTMLElement) {
-            found.node.click();
+            triggerClick(found.node);
             await waitFor(180);
             return { ok: true, selectedLabel: found.label, currentLabel: triggerLabel, availableLabels: options.map((option) => option.label), triggerLabel };
           }
@@ -1661,8 +1920,9 @@ function normalizeChatGPTImageResultAction(value) {
 export function hasChatGPTImageContext(snapshot) {
   const normalized = normalizeChatGPTImageCapabilitySnapshot(snapshot);
   return Boolean(
-    normalized.isImagesPage
-    && (normalized.styleCards.length > 0
+    (normalized.isImagesPage || normalized.isImageComposer)
+    && (normalized.isImageComposer
+      || normalized.styleCards.length > 0
       || normalized.taskCards.length > 0
       || normalized.resultActions.length > 0
       || normalized.dragDropText
@@ -1983,9 +2243,17 @@ export async function waitForChatGPTImages(page, beforeUrls, timeoutSeconds) {
     const maxPolls = Math.max(1, Math.ceil(timeoutSeconds / pollIntervalSeconds));
     let lastUrls = [];
     let stableCount = 0;
+    const waitForFixedPoll = async (seconds) => {
+        try {
+            await page.wait({ time: seconds });
+        }
+        catch {
+            await page.wait(seconds);
+        }
+    };
 
     for (let i = 0; i < maxPolls; i++) {
-        await page.wait(i === 0 ? 3 : pollIntervalSeconds);
+        await waitForFixedPoll(i === 0 ? 3 : pollIntervalSeconds);
 
         // Check if still generating
         const generating = await isGenerating(page);

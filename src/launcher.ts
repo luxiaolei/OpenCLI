@@ -26,6 +26,8 @@ const PROBE_TIMEOUT_MS = 2_000;
 const KILL_GRACE_MS = 3_000;
 const DEFAULT_CHROME_CDP_PORT = 9222;
 const DEFAULT_CHROME_PROFILE_DIRECTORY = 'Default';
+const CHROME_CDP_GUIDANCE_SUPPRESS_VALUES = new Set(['0', 'false', 'no', 'off']);
+let chromeCDPGuidanceWarned = false;
 
 /**
  * Probe whether a CDP endpoint is listening on the given port.
@@ -76,6 +78,37 @@ function parseChromeCDPPort(): number {
 function isAutoChromeCDPDisabled(): boolean {
   const raw = process.env.OPENCLI_AUTO_CHROME_CDP;
   return raw !== undefined && ['0', 'false', 'no', 'off'].includes(raw.trim().toLowerCase());
+}
+
+function isChromeCDPGuidanceSuppressed(): boolean {
+  const raw = process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+  return raw !== undefined && CHROME_CDP_GUIDANCE_SUPPRESS_VALUES.has(raw.trim().toLowerCase());
+}
+
+function quoteArg(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function chromeExecutableHint(executable?: string | null): string {
+  if (executable) return quoteArg(executable);
+  if (process.platform === 'darwin') return quoteArg('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+  if (process.platform === 'win32') return 'chrome.exe';
+  return 'google-chrome';
+}
+
+function warnChromeCDPUnavailable(reason: string, port: number, executable?: string | null): void {
+  if (chromeCDPGuidanceWarned || isChromeCDPGuidanceSuppressed()) return;
+  chromeCDPGuidanceWarned = true;
+  const endpoint = `http://127.0.0.1:${port}`;
+  const profileDir = path.join(os.homedir(), '.opencli', 'chrome-cdp-profile');
+  log.warn(
+    `Chrome CDP auto-connect is unavailable (${reason}); falling back to Browser Bridge.\n` +
+    '  If Browser Bridge is not installed/connected, start Chrome with a dedicated local CDP profile:\n' +
+    `    ${chromeExecutableHint(executable)} --user-data-dir=${quoteArg(profileDir)} --remote-debugging-port=${port} --no-first-run --no-default-browser-check\n` +
+    `  Then run: OPENCLI_CDP_ENDPOINT=${endpoint} opencli ...\n` +
+    '  Keep the debug port local-only (127.0.0.1/localhost); do not expose it publicly.\n' +
+    '  Suppress this guidance with OPENCLI_CHROME_CDP_GUIDANCE=0.',
+  );
 }
 
 export function buildChromeLaunchArgs(opts: ResolveChromeEndpointOptions = {}): string[] {
@@ -234,13 +267,19 @@ export async function resolveChromeEndpoint(
 
   // If some non-Chrome CDP endpoint already occupies the port (for example an
   // Electron app), do not launch Chrome on top of it. Fall back to BrowserBridge.
-  if (await probeAny(port)) return undefined;
+  if (await probeAny(port)) {
+    warnChromeCDPUnavailable(`port ${port} is occupied by a non-Chrome CDP endpoint`, port);
+    return undefined;
+  }
 
   if (opts.launch === false) return undefined;
 
   const discover = deps.discoverChromeExecutable ?? discoverChromeExecutable;
   const executable = discover();
-  if (!executable) return undefined;
+  if (!executable) {
+    warnChromeCDPUnavailable('Chrome executable was not found', port);
+    return undefined;
+  }
 
   const args = buildChromeLaunchArgs({ ...opts, port });
   try {
@@ -248,7 +287,9 @@ export async function resolveChromeEndpoint(
     await (deps.pollForReady ?? pollForChromeReady)(port);
     return createTarget(port, opts.url);
   } catch (err) {
-    log.debug(`[launcher] Chrome CDP auto-launch unavailable on ${port}: ${err instanceof Error ? err.message : String(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    log.debug(`[launcher] Chrome CDP auto-launch unavailable on ${port}: ${message}`);
+    warnChromeCDPUnavailable(message, port, executable);
     return undefined;
   }
 }

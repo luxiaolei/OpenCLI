@@ -46,6 +46,15 @@ describe('probeCDP', () => {
 });
 
 describe('resolveChromeEndpoint', () => {
+  async function importFreshLauncher() {
+    vi.resetModules();
+    return await import('./launcher.js');
+  }
+
+  function captureStderr() {
+    return vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  }
+
   it('recognizes Chrome CDP version payloads but rejects Electron endpoints', () => {
     expect(isChromeCDPVersionPayload({ Browser: 'Chrome/142.0.0.0', 'User-Agent': 'Mozilla/5.0 Chrome/142 Safari/537.36' })).toBe(true);
     expect(isChromeCDPVersionPayload({ Browser: 'Chrome/142.0.0.0', 'User-Agent': 'Mozilla/5.0 Electron/38 Chrome/142 Safari/537.36' })).toBe(false);
@@ -97,6 +106,8 @@ describe('resolveChromeEndpoint', () => {
   });
 
   it('falls back when the default port is occupied by a non-Chrome CDP endpoint', async () => {
+    const previous = process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    process.env.OPENCLI_CHROME_CDP_GUIDANCE = '0';
     const launchChrome = vi.fn();
 
     await expect(resolveChromeEndpoint({ port: 9222 }, {
@@ -107,9 +118,14 @@ describe('resolveChromeEndpoint', () => {
     })).resolves.toBeUndefined();
 
     expect(launchChrome).not.toHaveBeenCalled();
+    if (previous === undefined) delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    else process.env.OPENCLI_CHROME_CDP_GUIDANCE = previous;
   });
 
   it('falls back when Chrome auto-launch or readiness polling fails', async () => {
+    const previous = process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    process.env.OPENCLI_CHROME_CDP_GUIDANCE = '0';
+
     await expect(resolveChromeEndpoint({ port: 9444 }, {
       probeChromeCDP: vi.fn().mockResolvedValue(false),
       probeAnyCDP: vi.fn().mockResolvedValue(false),
@@ -117,6 +133,94 @@ describe('resolveChromeEndpoint', () => {
       launchChrome: vi.fn().mockResolvedValue(undefined),
       pollForReady: vi.fn().mockRejectedValue(new Error('port never became ready')),
     })).resolves.toBeUndefined();
+
+    if (previous === undefined) delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    else process.env.OPENCLI_CHROME_CDP_GUIDANCE = previous;
+  });
+
+  it('emits customer Chrome CDP fallback guidance only once when Chrome cannot be auto-resolved', async () => {
+    delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    const { resolveChromeEndpoint: freshResolveChromeEndpoint } = await importFreshLauncher();
+    const stderr = captureStderr();
+    const deps = {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(false),
+      discoverChromeExecutable: vi.fn().mockReturnValue(null),
+    };
+
+    await expect(freshResolveChromeEndpoint({ port: 9222 }, deps)).resolves.toBeUndefined();
+    await expect(freshResolveChromeEndpoint({ port: 9222 }, deps)).resolves.toBeUndefined();
+
+    const output = stderr.mock.calls.map((call) => String(call[0])).join('');
+    expect((output.match(/Chrome CDP auto-connect is unavailable/g) ?? []).length).toBe(1);
+    expect(output).toContain('falling back to Browser Bridge');
+    expect(output).toContain('OPENCLI_CDP_ENDPOINT=http://127.0.0.1:9222');
+    expect(output).toContain('--user-data-dir=');
+    expect(output).toContain('OPENCLI_CHROME_CDP_GUIDANCE=0');
+    stderr.mockRestore();
+  });
+
+  it('suppresses customer Chrome CDP fallback guidance when disabled by env', async () => {
+    const previous = process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    process.env.OPENCLI_CHROME_CDP_GUIDANCE = '0';
+    const { resolveChromeEndpoint: freshResolveChromeEndpoint } = await importFreshLauncher();
+    const stderr = captureStderr();
+
+    await expect(freshResolveChromeEndpoint({ port: 9222 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(false),
+      discoverChromeExecutable: vi.fn().mockReturnValue(null),
+    })).resolves.toBeUndefined();
+
+    const output = stderr.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).not.toContain('Chrome CDP auto-connect is unavailable');
+    if (previous === undefined) delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    else process.env.OPENCLI_CHROME_CDP_GUIDANCE = previous;
+    stderr.mockRestore();
+  });
+
+  it('falls back safely and guides when auto-launched Chrome never exposes CDP', async () => {
+    delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    const { resolveChromeEndpoint: freshResolveChromeEndpoint } = await importFreshLauncher();
+    const stderr = captureStderr();
+    const createChromeTarget = vi.fn().mockResolvedValue('ws://127.0.0.1:9444/devtools/page/unsafe');
+
+    await expect(freshResolveChromeEndpoint({ port: 9444 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(false),
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      launchChrome: vi.fn().mockResolvedValue(undefined),
+      pollForReady: vi.fn().mockRejectedValue(new Error('port never became ready')),
+      createChromeTarget,
+    })).resolves.toBeUndefined();
+
+    const output = stderr.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).toContain('Chrome CDP auto-connect is unavailable');
+    expect(output).toContain('port never became ready');
+    expect(output).toContain('falling back to Browser Bridge');
+    expect(createChromeTarget).not.toHaveBeenCalled();
+    stderr.mockRestore();
+  });
+
+  it('does not claim direct Chrome CDP is ready when the port is occupied by non-Chrome CDP', async () => {
+    delete process.env.OPENCLI_CHROME_CDP_GUIDANCE;
+    const { resolveChromeEndpoint: freshResolveChromeEndpoint } = await importFreshLauncher();
+    const stderr = captureStderr();
+    const launchChrome = vi.fn();
+
+    await expect(freshResolveChromeEndpoint({ port: 9222 }, {
+      probeChromeCDP: vi.fn().mockResolvedValue(false),
+      probeAnyCDP: vi.fn().mockResolvedValue(true),
+      discoverChromeExecutable: vi.fn().mockReturnValue('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      launchChrome,
+    })).resolves.toBeUndefined();
+
+    const output = stderr.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).toContain('non-Chrome CDP endpoint');
+    expect(output).toContain('falling back to Browser Bridge');
+    expect(output).not.toContain('Chrome CDP is ready');
+    expect(launchChrome).not.toHaveBeenCalled();
+    stderr.mockRestore();
   });
 });
 

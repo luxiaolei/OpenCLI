@@ -10,6 +10,7 @@ vi.mock('@jackwener/opencli/registry', () => ({
 
 const {
   mockBuildRow,
+  mockEnterImageComposer,
   mockGetConversationList,
   mockHasContext,
   mockOpenImages,
@@ -38,6 +39,7 @@ const {
     ...(extra.reason ? { reason: extra.reason } : {}),
     ...(extra.detail ? { detail: extra.detail } : {}),
   })),
+  mockEnterImageComposer: vi.fn(),
   mockGetConversationList: vi.fn(),
   mockHasContext: vi.fn(),
   mockOpenImages: vi.fn(),
@@ -59,6 +61,7 @@ const {
 vi.mock('./utils.js', () => ({
   CHATGPT_WEB_DOMAIN: 'chatgpt.com',
   buildChatGPTImageCreateRow: mockBuildRow,
+  enterChatGPTImageComposer: mockEnterImageComposer,
   getChatGPTConversationList: mockGetConversationList,
   hasChatGPTImageContext: mockHasContext,
   openChatGPTImages: mockOpenImages,
@@ -86,6 +89,7 @@ describe('chatgpt/image-create', () => {
   beforeEach(() => {
     fs.writeFileSync(referenceFile, Buffer.from('89504e470d0a1a0a', 'hex'));
     vi.clearAllMocks();
+    mockEnterImageComposer.mockResolvedValue({ ok: true, method: 'plus-menu', selectedLabel: '创建图片' });
     mockReadCapabilities.mockResolvedValue({
       url: 'https://chatgpt.com/images/',
       title: 'ChatGPT 图片 | AI 图片生成器',
@@ -133,13 +137,13 @@ describe('chatgpt/image-create', () => {
     });
   });
 
-  it('returns blocked when /images is not open', async () => {
-    mockReadCapabilities.mockResolvedValue({
-      url: 'https://chatgpt.com/',
-      title: 'ChatGPT',
-      accountTier: 'Pro',
-      isImagesPage: false,
-      detail: 'redirected',
+  it('returns blocked when image entry cannot switch the current chat into image mode', async () => {
+    mockEnterImageComposer.mockResolvedValue({
+      ok: false,
+      reason: 'create-image-option-not-found',
+      pageUrl: 'https://chatgpt.com/',
+      pagePath: '/',
+      availableLabels: ['添加照片和文件', '网页搜索'],
     });
 
     const result = await imageCreateCommand.func(page, { prompt: 'blue mug' });
@@ -149,11 +153,11 @@ describe('chatgpt/image-create', () => {
       action: 'create',
       status: 'blocked',
       page_url: 'https://chatgpt.com/',
-      page_title: 'ChatGPT',
-      account_tier: 'Pro',
+      page_title: '/',
+      account_tier: '',
       conversation_id: '',
-      reason: 'not-images-page',
-      detail: 'redirected',
+      reason: 'image-entry-unavailable',
+      detail: 'create-image-option-not-found. Available: 添加照片和文件, 网页搜索',
     }]);
   });
 
@@ -268,11 +272,11 @@ describe('chatgpt/image-create', () => {
       timeout: '5',
     });
 
-    expect(mockOpenImages).toHaveBeenCalledTimes(1);
     expect(mockGetConversationList).toHaveBeenCalledWith(page);
     expect(mockResolveConversation).toHaveBeenCalledWith([{ Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' }], '菜品生成', 'contains');
     expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/dish123');
     expect(mockReadCreateState).toHaveBeenCalledWith(page);
+    expect(mockEnterImageComposer).toHaveBeenCalledTimes(1);
     expect(mockSendPrompt).toHaveBeenCalledWith(page, '继续做一版宫保鸡丁菜品海报');
     expect(result[0].status).toBe('submitted');
   });

@@ -5,10 +5,10 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import {
   buildChatGPTImageCreateRow,
   CHATGPT_WEB_DOMAIN,
+  enterChatGPTImageComposer,
   getChatGPTConversationList,
   hasChatGPTImageContext,
   openChatGPTConversation,
-  openChatGPTImages,
   parseChatGPTConversationUrl,
   parseChatGPTPositiveInt,
   parseChatGPTTitleMatchMode,
@@ -113,24 +113,6 @@ export const imageCreateCommand = cli({
       })];
     }
 
-    await openChatGPTImages(page);
-    const preflight = await readChatGPTImageCapabilities(page);
-
-    if (!preflight.isImagesPage) {
-      return [buildChatGPTImageCreateRow(preflight, {
-        status: 'blocked',
-        reason: 'not-images-page',
-        detail: preflight.detail,
-      })];
-    }
-
-    if (!hasChatGPTImageContext(preflight)) {
-      return [buildChatGPTImageCreateRow(preflight, {
-        status: 'blocked',
-        reason: 'no-image-context',
-      })];
-    }
-
     if (history) {
       let targetHistoryUrl = '';
       const directUrl = parseChatGPTConversationUrl(history);
@@ -141,7 +123,7 @@ export const imageCreateCommand = cli({
         const conversations = await getChatGPTConversationList(page);
         const picked = resolveChatGPTConversationForQuery(conversations, history, match);
         if (!picked?.Url) {
-          return [buildChatGPTImageCreateRow(preflight, {
+          return [buildChatGPTImageCreateRow({}, {
             status: 'blocked',
             reason: 'history-not-found',
             detail: `No image history matched: ${history}`,
@@ -161,6 +143,31 @@ export const imageCreateCommand = cli({
           detail: 'The selected history target is not an image conversation.',
         })];
       }
+    }
+
+    const entry = await enterChatGPTImageComposer(page);
+    if (!entry?.ok) {
+      const available = Array.isArray(entry?.availableLabels) && entry.availableLabels.length > 0
+        ? ` Available: ${entry.availableLabels.join(', ')}`
+        : '';
+      return [buildChatGPTImageCreateRow({
+        pageUrl: entry?.pageUrl || '',
+        pageTitle: entry?.pagePath || '',
+      }, {
+        status: 'blocked',
+        reason: 'image-entry-unavailable',
+        detail: `${entry?.reason || 'ChatGPT image entry was not available.'}.${available}`,
+      })];
+    }
+
+    const preflight = await readChatGPTImageCapabilities(page);
+
+    if (!hasChatGPTImageContext(preflight)) {
+      return [buildChatGPTImageCreateRow(preflight, {
+        status: 'blocked',
+        reason: preflight.isSignedIn === false ? 'not-signed-in' : 'no-image-context',
+        detail: preflight.detail,
+      })];
     }
 
     if (aspect) {
