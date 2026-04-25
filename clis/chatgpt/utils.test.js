@@ -94,8 +94,8 @@ describe('chatgpt utils', () => {
   });
 
   it('enters ChatGPT image mode from a normal chat via plus menu create image', async () => {
-    let currentPath = '/';
-    let currentUrl = 'https://chatgpt.com/';
+    let currentPath = '/images/';
+    let currentUrl = 'https://chatgpt.com/images/';
     let menuOpen = false;
     let imageContext = false;
     const plusButton = new FakeHTMLElement({ text: '', ariaCurrent: '' });
@@ -300,9 +300,10 @@ describe('chatgpt utils', () => {
     expect(clicked).toEqual(['自动', '宽屏 16:9']);
   });
 
-  it('assigns a reference image payload to a ChatGPT image file input', async () => {
+  it('assigns a reference image payload to the stable ChatGPT composer file input', async () => {
     let bodyText = '';
-    const input = new FakeHTMLInputElement({ accept: 'image/png,image/jpeg' });
+    const modalInput = new FakeHTMLInputElement({ id: 'image-gen-action-modal-upload-photo', accept: 'image/*' });
+    const input = new FakeHTMLInputElement({ id: 'file-input', accept: 'image/png,image/jpeg' });
     input.dispatchEvent = (event) => {
       if (event?.type === 'change') bodyText = 'reference.png';
     };
@@ -334,7 +335,7 @@ describe('chatgpt utils', () => {
             get textContent() { return bodyText; },
           },
           querySelectorAll: (selector) => {
-            if (selector === 'input[type="file"]') return [input];
+            if (selector === 'input[type="file"]') return [modalInput, input];
             return [];
           },
         };
@@ -362,6 +363,7 @@ describe('chatgpt utils', () => {
       confirmed: true,
     }));
     expect(input.files[0].name).toBe('reference.png');
+    expect(modalInput.files.length).toBe(0);
   });
 
   it('navigates to the target conversation before renaming via sidebar actions', async () => {

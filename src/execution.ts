@@ -32,6 +32,11 @@ const _loadedModules = new Map<string, Promise<void>>();
 const _moduleMtimes = new Map<string, number>();
 const _userClisDir = `${os.homedir()}/.opencli/clis/`;
 
+function isEnabledEnv(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 export function coerceAndValidateArgs(cmdArgs: Arg[], kwargs: CommandArgs): CommandArgs {
   const result: CommandArgs = { ...kwargs };
 
@@ -200,7 +205,7 @@ export async function executeCommand(
         }
       } else if (process.env.OPENCLI_CDP_ENDPOINT) {
         cdpEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
-      } else {
+      } else if (isEnabledEnv(process.env.OPENCLI_AUTO_CHROME_CDP)) {
         cdpEndpoint = await resolveChromeEndpoint();
       }
 

@@ -179,19 +179,20 @@ describe('executeCommand — non-browser timeout', () => {
     mockMaybeBindWorkspaceToCurrentTab.mockReset();
   });
 
-  it('prefers default Chrome CDP for normal web adapters before falling back to BrowserBridge reuse', async () => {
+  it('does not auto-launch a dedicated Chrome CDP profile for normal web adapters by default', async () => {
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const goto = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow, goto } as any;
 
     mockResolveChromeEndpoint.mockResolvedValue('http://127.0.0.1:9333');
+    mockMaybeBindWorkspaceToCurrentTab.mockResolvedValue(true);
     vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
     const browserSessionSpy = vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
 
     const cmd = cli({
       site: 'chatgpt',
-      name: 'browser-cdp-default-profile',
-      description: 'test default Chrome CDP for web adapters',
+      name: 'browser-bridge-default-profile',
+      description: 'test BrowserBridge default for web adapters',
       browser: true,
       strategy: Strategy.COOKIE,
       domain: 'chatgpt.com',
@@ -200,15 +201,54 @@ describe('executeCommand — non-browser timeout', () => {
 
     await executeCommand(cmd, {});
 
-    expect(mockResolveChromeEndpoint).toHaveBeenCalledTimes(1);
+    expect(mockResolveChromeEndpoint).not.toHaveBeenCalled();
     expect(browserSessionSpy.mock.calls[0][2]).toMatchObject({
       workspace: 'site:chatgpt',
-      cdpEndpoint: 'http://127.0.0.1:9333',
     });
-    expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    expect(browserSessionSpy.mock.calls[0][2]?.cdpEndpoint).toBeUndefined();
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('site:chatgpt', { matchDomain: 'chatgpt.com' });
     vi.restoreAllMocks();
     mockResolveChromeEndpoint.mockReset();
     mockMaybeBindWorkspaceToCurrentTab.mockReset();
+  });
+
+  it('uses a dedicated Chrome CDP profile for normal web adapters only when explicitly enabled', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const goto = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow, goto } as any;
+    const previous = process.env.OPENCLI_AUTO_CHROME_CDP;
+
+    process.env.OPENCLI_AUTO_CHROME_CDP = '1';
+    mockResolveChromeEndpoint.mockResolvedValue('http://127.0.0.1:9333');
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+    const cmd = cli({
+      site: 'chatgpt',
+      name: 'browser-cdp-explicit-profile',
+      description: 'test explicit Chrome CDP for web adapters',
+      browser: true,
+      strategy: Strategy.COOKIE,
+      domain: 'chatgpt.com',
+      func: async () => [{ ok: true }],
+    });
+
+    try {
+      await executeCommand(cmd, {});
+
+      expect(mockResolveChromeEndpoint).toHaveBeenCalledTimes(1);
+      expect(browserSessionSpy.mock.calls[0][2]).toMatchObject({
+        workspace: 'site:chatgpt',
+        cdpEndpoint: 'http://127.0.0.1:9333',
+      });
+      expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.OPENCLI_AUTO_CHROME_CDP;
+      else process.env.OPENCLI_AUTO_CHROME_CDP = previous;
+      vi.restoreAllMocks();
+      mockResolveChromeEndpoint.mockReset();
+      mockMaybeBindWorkspaceToCurrentTab.mockReset();
+    }
   });
 
   it('does not re-run custom validation when args are already prepared', async () => {

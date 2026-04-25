@@ -1215,8 +1215,7 @@ function buildEnterImageComposerScript() {
         imageModeButton,
         aspectButton,
         active: Boolean(
-          currentPath.startsWith('/images')
-          || /描述(新图片|或编辑图片)|describe (a )?new image|describe or edit image/i.test(promptPlaceholder)
+          /描述(新图片|或编辑图片)|describe (a )?new image|describe or edit image/i.test(promptPlaceholder)
           || imageModeButton
           || aspectButton
         ),
@@ -1233,6 +1232,16 @@ function buildEnterImageComposerScript() {
         imageModeButtonLabel: initial.imageModeButton ? combinedLabel(initial.imageModeButton) : '',
         aspectButtonLabel: initial.aspectButton ? combinedLabel(initial.aspectButton) : '',
       };
+    }
+
+    const closeImageOverlayButton = Array.from(document.querySelectorAll('button, [role="button"]')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = lower(attrOf(node, 'aria-label') || textOf(node));
+      return label.includes('关闭全屏显示') || label.includes('close fullscreen') || label.includes('close full screen') || label === 'close';
+    }) || null;
+    if (closeImageOverlayButton instanceof HTMLElement) {
+      triggerClick(closeImageOverlayButton);
+      await waitFor(250);
     }
 
     const plusButton = queryVisible(mainRoot, '#composer-plus-btn')
@@ -1501,17 +1510,18 @@ function buildImageAspectSelectionScript(requestedAspect) {
       ['square', ['square', '1:1', '方形', '正方形']],
       ['方形', ['square', '1:1', '方形', '正方形']],
       ['正方形', ['square', '1:1', '方形', '正方形']],
-      ['landscape', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
-      ['横向', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
-      ['横版', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
-      ['横屏', ['landscape', '16:9', '4:3', '横向', '横版', '横屏', '宽屏', 'widescreen']],
-      ['wide', ['wide', 'widescreen', '16:9', '宽屏']],
-      ['widescreen', ['wide', 'widescreen', '16:9', '宽屏']],
-      ['宽屏', ['wide', 'widescreen', '16:9', '宽屏']],
-      ['portrait', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
-      ['纵向', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
-      ['竖向', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
-      ['竖版', ['portrait', '9:16', '3:4', '纵向', '竖向', '竖版', '故事', 'story']],
+      ['landscape', ['landscape', '16:9', '4:3', '3:2', '横向', '横版', '横屏', '宽屏', 'widescreen', 'wide']],
+      ['横向', ['landscape', '16:9', '4:3', '3:2', '横向', '横版', '横屏', '宽屏', 'widescreen', 'wide']],
+      ['横版', ['landscape', '16:9', '4:3', '3:2', '横向', '横版', '横屏', '宽屏', 'widescreen', 'wide']],
+      ['横屏', ['landscape', '16:9', '4:3', '3:2', '横向', '横版', '横屏', '宽屏', 'widescreen', 'wide']],
+      ['wide', ['wide', 'widescreen', '16:9', 'landscape', '宽屏', '横向']],
+      ['widescreen', ['wide', 'widescreen', '16:9', 'landscape', '宽屏', '横向']],
+      ['宽屏', ['wide', 'widescreen', '16:9', 'landscape', '宽屏', '横向']],
+      ['portrait', ['portrait', '9:16', '3:4', '2:3', '纵向', '竖向', '竖版', 'tall', '故事', 'story']],
+      ['tall', ['portrait', '9:16', '3:4', '2:3', '纵向', '竖向', '竖版', 'tall', '故事', 'story']],
+      ['纵向', ['portrait', '9:16', '3:4', '2:3', '纵向', '竖向', '竖版', 'tall', '故事', 'story']],
+      ['竖向', ['portrait', '9:16', '3:4', '2:3', '纵向', '竖向', '竖版', 'tall', '故事', 'story']],
+      ['竖版', ['portrait', '9:16', '3:4', '2:3', '纵向', '竖向', '竖版', 'tall', '故事', 'story']],
       ['story', ['story', '9:16', '故事']],
       ['故事', ['story', '9:16', '故事']],
     ]);
@@ -1563,7 +1573,18 @@ function buildImageAspectSelectionScript(requestedAspect) {
         || label.includes('添加文件')
         || label.includes('add file')
         || label.includes('voice')
-        || label.includes('dictation');
+        || label.includes('dictation')
+        || label.includes('打开图片')
+        || label.includes('open image')
+        || label.includes('编辑图片')
+        || label.includes('edit image')
+        || label.includes('分享此图片')
+        || label.includes('share this image')
+        || label.includes('conversation options')
+        || label.includes('对话选项')
+        || label.includes('图片 ') && label.includes('共')
+        || label.includes('image ') && label.includes(' of ')
+        || label.length > 80;
     };
     const allClickable = () => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"], [data-radix-collection-item]'))
       .filter((node) => isVisible(node) && !isBadControl(node));
@@ -1589,7 +1610,12 @@ function buildImageAspectSelectionScript(requestedAspect) {
     };
 
     return (async () => {
-      const visibleOptions = collectOptions();
+      let visibleOptions = [];
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        visibleOptions = collectOptions();
+        if (visibleOptions.length > 0) break;
+        await waitFor(200);
+      }
       const already = visibleOptions.find((option) => matchesWanted(option.label) && /true|checked/i.test(String(option.node.getAttribute('aria-selected') || option.node.getAttribute('aria-checked') || option.node.getAttribute('aria-pressed') || '')));
       if (already) {
         return { ok: true, alreadySelected: true, selectedLabel: already.label, currentLabel: already.label, availableLabels: visibleOptions.map((option) => option.label) };
@@ -1678,8 +1704,21 @@ function buildImageReferenceUploadScript(fileSpec) {
       const accept = lower(attrOf(input, 'accept'));
       return !accept || accept.includes('image') || accept.includes('.png') || accept.includes('.jpg') || accept.includes('.jpeg') || accept.includes('.webp') || accept.includes('.gif') || accept.includes('.avif');
     };
+    const scoreFileInput = (input) => {
+      const id = lower(attrOf(input, 'id'));
+      const name = lower(attrOf(input, 'name'));
+      const label = [id, name, lower(attrOf(input, 'aria-label')), lower(attrOf(input, 'data-testid'))].join(' ');
+      let score = 0;
+      if (id === 'file-input') score += 100;
+      if (label.includes('upload-file')) score += 80;
+      if (label.includes('upload-photo')) score += 60;
+      if (label.includes('camera')) score -= 40;
+      if (label.includes('action-modal')) score -= 30;
+      return score;
+    };
     const findFileInput = () => Array.from(document.querySelectorAll('input[type="file"]'))
-      .find((node) => node instanceof HTMLInputElement && acceptsImage(node)) || null;
+      .filter((node) => node instanceof HTMLInputElement && acceptsImage(node))
+      .sort((a, b) => scoreFileInput(b) - scoreFileInput(a))[0] || null;
     const countAttachmentSignals = () => {
       const fileName = clean(referenceFile.name);
       const text = clean(document.body?.innerText || document.body?.textContent || '');

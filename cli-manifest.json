@@ -3506,19 +3506,19 @@
         "name": "file",
         "type": "str",
         "required": false,
-        "help": "Optional local reference image path to upload before sending the prompt (image-to-image)"
+        "help": "Optional local reference image path for image-to-image upload. Supports png, jpg/jpeg, webp, gif, avif, heic/heif, mpo"
       },
       {
         "name": "aspect",
         "type": "str",
         "required": false,
-        "help": "Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape"
+        "help": "Optional ChatGPT website size/aspect option. Known aliases: auto, square/1:1, wide/landscape/16:9, portrait/tall/9:16; exact visible labels also work"
       },
       {
         "name": "size",
         "type": "str",
         "required": false,
-        "help": "Alias for --aspect"
+        "help": "Alias for --aspect; selects ChatGPT web UI size/aspect, not API pixels"
       },
       {
         "name": "op",
@@ -3616,19 +3616,19 @@
         "name": "file",
         "type": "str",
         "required": false,
-        "help": "Optional local reference image path to upload before sending the prompt (image-to-image)"
+        "help": "Optional local reference image path for image-to-image upload. Supports png, jpg/jpeg, webp, gif, avif, heic/heif, mpo"
       },
       {
         "name": "aspect",
         "type": "str",
         "required": false,
-        "help": "Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape"
+        "help": "Optional ChatGPT website size/aspect option. Known aliases: auto, square/1:1, wide/landscape/16:9, portrait/tall/9:16; exact visible labels also work"
       },
       {
         "name": "size",
         "type": "str",
         "required": false,
-        "help": "Alias for --aspect"
+        "help": "Alias for --aspect; selects ChatGPT web UI size/aspect, not API pixels"
       },
       {
         "name": "timeout",

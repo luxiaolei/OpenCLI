@@ -31,6 +31,9 @@ const CHATGPT_IMAGE_UPLOAD_MIME_BY_EXT = new Map([
   ['.webp', 'image/webp'],
   ['.gif', 'image/gif'],
   ['.avif', 'image/avif'],
+  ['.heic', 'image/heic'],
+  ['.heif', 'image/heif'],
+  ['.mpo', 'image/jpeg'],
 ]);
 
 function expandHomePath(value) {
@@ -54,7 +57,7 @@ async function readChatGPTImageReferenceFile(filePath) {
   }
   const mimeType = inferImageMimeType(resolvedPath);
   if (!mimeType.startsWith('image/')) {
-    throw new Error(`Reference file must be an image with extension png, jpg, jpeg, webp, gif, or avif: ${resolvedPath}`);
+    throw new Error(`Reference file must be an image with extension png, jpg, jpeg, webp, gif, avif, heic, heif, or mpo: ${resolvedPath}`);
   }
   const buffer = await fs.readFile(resolvedPath);
   return {
@@ -91,9 +94,9 @@ export const imageCreateCommand = cli({
     { name: 'match', required: false, help: 'Title match mode for --history: contains or exact', default: 'contains' },
     { name: 'title', required: false, help: 'Optional title to apply to the resulting ChatGPT conversation after submission' },
     { name: 'thinking', required: false, help: 'Optional visible label from the ChatGPT model / thinking selector to choose before sending the prompt' },
-    { name: 'file', required: false, help: 'Optional local reference image path to upload before sending the prompt (image-to-image)' },
-    { name: 'aspect', required: false, help: 'Optional ChatGPT image aspect ratio / size label, for example 1:1, 16:9, 9:16, square, portrait, or landscape' },
-    { name: 'size', required: false, help: 'Alias for --aspect' },
+    { name: 'file', required: false, help: 'Optional local reference image path for image-to-image upload. Supports png, jpg/jpeg, webp, gif, avif, heic/heif, mpo' },
+    { name: 'aspect', required: false, help: 'Optional ChatGPT website size/aspect option. Known aliases: auto, square/1:1, wide/landscape/16:9, portrait/tall/9:16; exact visible labels also work' },
+    { name: 'size', required: false, help: 'Alias for --aspect; selects ChatGPT web UI size/aspect, not API pixels' },
     { name: 'timeout', required: false, help: 'Max seconds to wait for a visible result signal before falling back to submitted (default: 30)', default: '30' },
   ],
   columns: ['action', 'status', 'page_url', 'conversation_id', 'mode_label'],
