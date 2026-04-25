@@ -7,6 +7,7 @@ import {
   CHATGPT_WEB_DOMAIN,
   enterChatGPTImageComposer,
   getChatGPTConversationList,
+  getChatGPTVisibleImageUrls,
   hasChatGPTImageContext,
   openChatGPTConversation,
   parseChatGPTConversationUrl,
@@ -113,6 +114,9 @@ export const imageCreateCommand = cli({
       })];
     }
 
+    let baselineSnapshot;
+    let beforeVisibleImageUrls = [];
+
     if (history) {
       let targetHistoryUrl = '';
       const directUrl = parseChatGPTConversationUrl(history);
@@ -143,6 +147,8 @@ export const imageCreateCommand = cli({
           detail: 'The selected history target is not an image conversation.',
         })];
       }
+      baselineSnapshot = historyState;
+      beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
     }
 
     const entry = await enterChatGPTImageComposer(page);
@@ -224,6 +230,14 @@ export const imageCreateCommand = cli({
       }
     }
 
+    if (!baselineSnapshot) {
+      const currentSnapshot = await readChatGPTImageCreateState(page).catch(() => null);
+      if (currentSnapshot?.isConversationPage && Array.isArray(currentSnapshot.resultActions) && currentSnapshot.resultActions.length > 0) {
+        baselineSnapshot = currentSnapshot;
+        beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
+      }
+    }
+
     const sendResult = await sendChatGPTImagePrompt(page, prompt);
     if (!sendResult?.ok) {
       return [buildChatGPTImageCreateRow(preflight, {
@@ -233,7 +247,7 @@ export const imageCreateCommand = cli({
       })];
     }
 
-    const finalSnapshot = await waitForChatGPTImageCreateState(page, timeout);
+    const finalSnapshot = await waitForChatGPTImageCreateState(page, timeout, baselineSnapshot);
     const finalModeLabel = modeResult.selectedLabel || finalSnapshot?.modeLabel || modeResult.currentLabel || preflight.modelSelectorLabel || '';
     if (title && finalSnapshot?.pageUrl) {
       await renameChatGPTConversation(page, finalSnapshot.pageUrl, title);
@@ -243,6 +257,7 @@ export const imageCreateCommand = cli({
       modeLabel: finalModeLabel,
     }, {
       modeLabel: finalModeLabel,
+      beforeUrls: beforeVisibleImageUrls,
     })];
   },
 });

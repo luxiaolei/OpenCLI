@@ -12,6 +12,7 @@ const {
   mockBuildRow,
   mockEnterImageComposer,
   mockGetConversationList,
+  mockGetVisibleImageUrls,
   mockHasContext,
   mockOpenImages,
   mockOpenConversation,
@@ -36,11 +37,13 @@ const {
     account_tier: snapshot.accountTier || '',
     ...(extra.modeLabel || snapshot.modeLabel ? { mode_label: extra.modeLabel || snapshot.modeLabel } : {}),
     conversation_id: snapshot.conversationId || '',
+    ...(Array.isArray(extra.beforeUrls) && extra.beforeUrls.length > 0 ? { before_urls: extra.beforeUrls } : {}),
     ...(extra.reason ? { reason: extra.reason } : {}),
     ...(extra.detail ? { detail: extra.detail } : {}),
   })),
   mockEnterImageComposer: vi.fn(),
   mockGetConversationList: vi.fn(),
+  mockGetVisibleImageUrls: vi.fn(),
   mockHasContext: vi.fn(),
   mockOpenImages: vi.fn(),
   mockOpenConversation: vi.fn(),
@@ -63,6 +66,7 @@ vi.mock('./utils.js', () => ({
   buildChatGPTImageCreateRow: mockBuildRow,
   enterChatGPTImageComposer: mockEnterImageComposer,
   getChatGPTConversationList: mockGetConversationList,
+  getChatGPTVisibleImageUrls: mockGetVisibleImageUrls,
   hasChatGPTImageContext: mockHasContext,
   openChatGPTImages: mockOpenImages,
   openChatGPTConversation: mockOpenConversation,
@@ -105,19 +109,21 @@ describe('chatgpt/image-create', () => {
     mockGetConversationList.mockResolvedValue([
       { Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' },
     ]);
+    mockGetVisibleImageUrls.mockResolvedValue([]);
     mockParseConversationUrl.mockReturnValue(null);
     mockResolveConversation.mockReturnValue({ Title: '菜品生成', Url: 'https://chatgpt.com/c/dish123' });
     mockSelectAspect.mockResolvedValue({ ok: true, skipped: true, selectedLabel: '', currentLabel: '', availableLabels: [] });
     mockSelectMode.mockResolvedValue({ ok: true, skipped: true, selectedLabel: '', currentLabel: '', availableLabels: [] });
     mockUploadReferenceImage.mockResolvedValue({ ok: true, fileName: 'opencli-chatgpt-reference.png', confirmed: true });
     mockReadCreateState.mockResolvedValue({
-      pageUrl: 'https://chatgpt.com/c/dish123',
-      pathname: '/c/dish123',
-      pageTitle: '菜品生成',
-      conversationId: 'dish123',
-      resultActions: ['open'],
-      resultActionLabels: ['打开图片：菜品生成'],
-      isConversationPage: true,
+      pageUrl: 'https://chatgpt.com/images/',
+      pathname: '/images/',
+      pageTitle: 'ChatGPT 图片 | AI 图片生成器',
+      conversationId: '',
+      resultActions: [],
+      resultActionLabels: [],
+      isConversationPage: false,
+      isImagesPage: true,
     });
     mockSendPrompt.mockResolvedValue({ ok: true });
     mockRenameConversation.mockResolvedValue({
@@ -200,7 +206,7 @@ describe('chatgpt/image-create', () => {
 
     expect(mockParsePositiveInt).toHaveBeenCalledWith('2', 30);
     expect(mockSendPrompt).toHaveBeenCalledWith(page, 'blue mug');
-    expect(mockWaitForState).toHaveBeenCalledWith(page, 2);
+    expect(mockWaitForState).toHaveBeenCalledWith(page, 2, undefined);
     expect(result).toEqual([{
       action: 'create',
       status: 'submitted',
@@ -209,6 +215,29 @@ describe('chatgpt/image-create', () => {
       account_tier: 'Pro',
       conversation_id: 'abc123',
     }]);
+  });
+
+  it('captures existing image thread baseline without --history before submitting', async () => {
+    mockReadCreateState.mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/current123',
+      pathname: '/c/current123',
+      pageTitle: 'Current image thread',
+      conversationId: 'current123',
+      resultActions: ['open'],
+      resultActionLabels: ['打开图片：旧海报'],
+      isConversationPage: true,
+    });
+    mockGetVisibleImageUrls.mockResolvedValue(['https://cdn.example.com/current-old.png']);
+
+    const result = await imageCreateCommand.func(page, { prompt: '继续这张图做一版新海报', timeout: '4' });
+
+    expect(mockWaitForState).toHaveBeenCalledWith(page, 4, expect.objectContaining({
+      pageUrl: 'https://chatgpt.com/c/current123',
+      conversationId: 'current123',
+      resultActions: ['open'],
+    }));
+    expect(mockGetVisibleImageUrls).toHaveBeenCalledWith(page);
+    expect(result[0].before_urls).toEqual(['https://cdn.example.com/current-old.png']);
   });
 
   it('returns result_visible when a new thread shows visible result signals', async () => {
@@ -265,6 +294,17 @@ describe('chatgpt/image-create', () => {
   });
 
   it('continues an existing image history when --history matches a prior thread title', async () => {
+    mockReadCreateState.mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/dish123',
+      pathname: '/c/dish123',
+      pageTitle: '菜品生成',
+      conversationId: 'dish123',
+      resultActions: ['open'],
+      resultActionLabels: ['打开图片：菜品生成'],
+      isConversationPage: true,
+    });
+    mockGetVisibleImageUrls.mockResolvedValue(['https://cdn.example.com/original-dish.png']);
+
     const result = await imageCreateCommand.func(page, {
       prompt: '继续做一版宫保鸡丁菜品海报',
       history: '菜品生成',
@@ -277,8 +317,15 @@ describe('chatgpt/image-create', () => {
     expect(mockOpenConversation).toHaveBeenCalledWith(page, 'https://chatgpt.com/c/dish123');
     expect(mockReadCreateState).toHaveBeenCalledWith(page);
     expect(mockEnterImageComposer).toHaveBeenCalledTimes(1);
+    expect(mockGetVisibleImageUrls).toHaveBeenCalledWith(page);
     expect(mockSendPrompt).toHaveBeenCalledWith(page, '继续做一版宫保鸡丁菜品海报');
+    expect(mockWaitForState).toHaveBeenCalledWith(page, 5, expect.objectContaining({
+      pageUrl: 'https://chatgpt.com/c/dish123',
+      conversationId: 'dish123',
+      resultActions: ['open'],
+    }));
     expect(result[0].status).toBe('submitted');
+    expect(result[0].before_urls).toEqual(['https://cdn.example.com/original-dish.png']);
   });
 
   it('selects the requested thinking / model label before sending the prompt', async () => {

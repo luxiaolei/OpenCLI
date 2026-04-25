@@ -92,12 +92,16 @@ export const imageCommand = cli({
       return buildLegacyImageRow(mapCreateStatusToLegacyStatus(createStatus), pageUrl);
     }
 
+    const beforeUrls = Array.isArray(createRow?.before_urls)
+      ? createRow.before_urls.map((url) => String(url ?? '').trim()).filter(Boolean)
+      : [];
     const downloadRows = await pollChatGPTImageDownloads(page, {
       url: pageUrl,
       op: outputDir,
       timeout,
       downloader: imageDownloadCommand.func,
       all: true,
+      downloadKwargs: beforeUrls.length > 0 ? { before_urls: beforeUrls } : {},
     });
     const firstDownloadRow = Array.isArray(downloadRows) ? downloadRows[0] : null;
     if (firstDownloadRow?.status === '⚠️ no-images') {

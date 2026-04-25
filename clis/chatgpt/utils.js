@@ -1968,6 +1968,9 @@ export function buildChatGPTImageCreateRow(snapshot, extra = {}) {
   };
   if (extra.reason) row.reason = String(extra.reason);
   if (extra.detail || normalized.detail) row.detail = String(extra.detail || normalized.detail);
+  if (Array.isArray(extra.beforeUrls) && extra.beforeUrls.length > 0) {
+    row.before_urls = Array.from(new Set(extra.beforeUrls.map((url) => String(url ?? '').trim()).filter(Boolean)));
+  }
   return row;
 }
 
@@ -2019,23 +2022,44 @@ export async function readChatGPTImageCreateState(page) {
   }
 }
 
-export async function waitForChatGPTImageCreateState(page, timeoutSeconds = 30) {
+function hasNewChatGPTImageCreateResult(snapshot, baselineSnapshot) {
+  const normalized = normalizeChatGPTImageCreateSnapshot(snapshot);
+  if (!normalized.conversationId || normalized.resultActions.length === 0) return false;
+  const baseline = normalizeChatGPTImageCreateSnapshot(baselineSnapshot || {});
+  if (!baseline.conversationId) return true;
+  if (normalized.conversationId !== baseline.conversationId) return true;
+  if (normalized.resultActions.length > baseline.resultActions.length) return true;
+  const baselineLabels = new Set((baseline.resultActionLabels || []).map((label) => String(label ?? '').trim()).filter(Boolean));
+  const currentLabels = (normalized.resultActionLabels || []).map((label) => String(label ?? '').trim()).filter(Boolean);
+  return currentLabels.some((label) => !baselineLabels.has(label));
+}
+
+async function waitForChatGPTImageCreateSettle(page, seconds = 1) {
+  if (!page || typeof page.wait !== 'function') return;
+  try {
+    await page.wait({ time: seconds });
+  } catch {
+    await page.wait(seconds);
+  }
+}
+
+export async function waitForChatGPTImageCreateState(page, timeoutSeconds = 30, baselineSnapshot = undefined) {
   const timeout = parseChatGPTPositiveInt(timeoutSeconds, 30);
   let lastSnapshot = await readChatGPTImageCreateState(page);
   let submittedSnapshot = lastSnapshot.conversationId ? lastSnapshot : null;
-  if (lastSnapshot.conversationId && lastSnapshot.resultActions.length > 0) {
+  if (hasNewChatGPTImageCreateResult(lastSnapshot, baselineSnapshot)) {
     return {
       ...lastSnapshot,
       status: 'result_visible',
     };
   }
   for (let attempt = 0; attempt < timeout; attempt += 1) {
-    await page.wait(1);
+    await waitForChatGPTImageCreateSettle(page, 1);
     lastSnapshot = await readChatGPTImageCreateState(page);
     if (lastSnapshot.conversationId) {
       submittedSnapshot = lastSnapshot;
     }
-    if (lastSnapshot.conversationId && lastSnapshot.resultActions.length > 0) {
+    if (hasNewChatGPTImageCreateResult(lastSnapshot, baselineSnapshot)) {
       return {
         ...lastSnapshot,
         status: 'result_visible',

@@ -93,6 +93,41 @@ describe('chatgpt/image legacy shorthand', () => {
     ]);
   });
 
+  it('passes create baseline image urls into shorthand auto-download', async () => {
+    mockCreateFunc.mockResolvedValue([
+      {
+        action: 'create',
+        status: 'submitted',
+        page_url: 'https://chatgpt.com/c/history123',
+        page_title: 'ChatGPT',
+        account_tier: 'Pro',
+        conversation_id: 'history123',
+        before_urls: [
+          'https://cdn.example.com/original-thread.png',
+          'https://cdn.example.com/previous-result.png',
+        ],
+      },
+    ]);
+
+    await imageCommand.func(page, {
+      prompt: 'continue the existing image thread',
+      history: 'prior poster thread',
+      op: '/tmp/chatgpt',
+      timeout: '6',
+    });
+
+    expect(mockDownloadFunc).toHaveBeenCalledWith(page, {
+      url: 'https://chatgpt.com/c/history123',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+      before_urls: [
+        'https://cdn.example.com/original-thread.png',
+        'https://cdn.example.com/previous-result.png',
+      ],
+    });
+  });
+
   it('returns the ChatGPT link without downloading when skip-download is enabled', async () => {
     const rows = await imageCommand.func(page, {
       prompt: 'tiny watercolor fox',
