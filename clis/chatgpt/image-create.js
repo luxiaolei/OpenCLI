@@ -137,7 +137,10 @@ export const imageCreateCommand = cli({
         await openChatGPTConversation(page, picked.Url);
       }
       const historyState = await readChatGPTImageCreateState(page);
-      if (!historyState.isConversationPage || historyState.resultActions.length === 0) {
+      beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
+      const hasImageThreadSignals = Array.isArray(historyState.resultActions) && historyState.resultActions.length > 0;
+      const hasVisibleImages = beforeVisibleImageUrls.length > 0;
+      if (!historyState.isConversationPage || (!hasImageThreadSignals && !hasVisibleImages)) {
         return [buildChatGPTImageCreateRow({
           ...historyState,
           pageUrl: historyState.pageUrl || targetHistoryUrl,
@@ -148,7 +151,6 @@ export const imageCreateCommand = cli({
         })];
       }
       baselineSnapshot = historyState;
-      beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
     }
 
     const entry = await enterChatGPTImageComposer(page);

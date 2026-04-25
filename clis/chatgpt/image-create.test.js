@@ -328,6 +328,36 @@ describe('chatgpt/image-create', () => {
     expect(result[0].before_urls).toEqual(['https://cdn.example.com/original-dish.png']);
   });
 
+  it('continues an existing image history when the thread has visible image urls but no result action buttons', async () => {
+    mockReadCreateState.mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/dish123',
+      pathname: '/c/dish123',
+      pageTitle: '菜品生成',
+      conversationId: 'dish123',
+      resultActions: [],
+      resultActionLabels: [],
+      isConversationPage: true,
+    });
+    mockGetVisibleImageUrls.mockResolvedValue(['https://cdn.example.com/original-dish.png']);
+
+    const result = await imageCreateCommand.func(page, {
+      prompt: '继续做一版宫保鸡丁菜品海报',
+      history: '菜品生成',
+      match: 'contains',
+      timeout: '5',
+    });
+
+    expect(mockEnterImageComposer).toHaveBeenCalledTimes(1);
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, '继续做一版宫保鸡丁菜品海报');
+    expect(mockWaitForState).toHaveBeenCalledWith(page, 5, expect.objectContaining({
+      pageUrl: 'https://chatgpt.com/c/dish123',
+      conversationId: 'dish123',
+      resultActions: [],
+    }));
+    expect(result[0].status).toBe('submitted');
+    expect(result[0].before_urls).toEqual(['https://cdn.example.com/original-dish.png']);
+  });
+
   it('selects the requested thinking / model label before sending the prompt', async () => {
     mockSelectMode.mockResolvedValue({
       ok: true,
