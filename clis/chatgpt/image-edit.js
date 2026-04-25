@@ -877,6 +877,8 @@ export const imageEditCommand = cli({
       }
     }
 
+    const initialVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
+
     const openResult = await imageEditInternals.waitForChatGPTImageOpenTarget(page, targetUrl ? 1 : imageIndex, targetUrl ? 8 : 4);
     if (!openResult?.ok) {
       return [imageEditInternals.buildChatGPTImageEditRow({
@@ -925,7 +927,11 @@ export const imageEditCommand = cli({
       })];
     }
 
-    const beforeVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
+    const modalVisibleImageUrls = await getChatGPTVisibleImageUrls(page).catch(() => []);
+    const beforeVisibleImageUrls = Array.from(new Set([
+      ...initialVisibleImageUrls,
+      ...modalVisibleImageUrls,
+    ]));
     const sendResult = await imageEditInternals.sendChatGPTImageEditPrompt(page, prompt);
     if (!sendResult?.ok) {
       return [imageEditInternals.buildChatGPTImageEditRow(readySnapshot, {

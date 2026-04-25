@@ -413,6 +413,64 @@ describe('chatgpt/image-edit', () => {
     ]);
   });
 
+  it('excludes images that were already visible before opening a thread image editor', async () => {
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, requestedIndex: 1, source: 'thread-lightbox' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
+      pageUrl: 'https://chatgpt.com/c/edit123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      modalVisible: true,
+      editComposerVisible: true,
+      editPromptPlaceholder: '描述编辑',
+    });
+    vi.spyOn(imageEditInternals, 'selectChatGPTImageInLightbox').mockResolvedValue({ ok: true, requestedIndex: 1 });
+    vi.spyOn(imageEditInternals, 'sendChatGPTImageEditPrompt').mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditState').mockResolvedValue({
+      status: 'result_visible',
+      pageUrl: 'https://chatgpt.com/c/edit123',
+      pageTitle: 'ChatGPT',
+      accountTier: 'Pro',
+      conversationId: 'edit123',
+      resultActions: ['edit', 'share'],
+      resultActionLabels: ['编辑图片', '分享此图片'],
+      loadingHeadlines: [],
+    });
+    mockGetVisibleImageUrls
+      .mockResolvedValueOnce([
+        'https://cdn.example.com/original-thread.png',
+        'https://cdn.example.com/previous-blue-edit.png',
+      ])
+      .mockResolvedValueOnce([
+        'https://cdn.example.com/modal-source.png',
+      ]);
+
+    const result = await imageEditCommand.func(page, {
+      prompt: 'make it purple',
+      url: 'https://chatgpt.com/c/edit123',
+      op: '/tmp/chatgpt',
+      timeout: '5',
+    });
+
+    expect(mockGetVisibleImageUrls).toHaveBeenCalledTimes(2);
+    expect(mockImageDownloadFunc).toHaveBeenCalledWith(page, {
+      url: 'https://chatgpt.com/c/edit123',
+      op: '/tmp/chatgpt',
+      timeout: '3',
+      all: true,
+      before_urls: [
+        'https://cdn.example.com/original-thread.png',
+        'https://cdn.example.com/previous-blue-edit.png',
+        'https://cdn.example.com/modal-source.png',
+      ],
+    });
+    expect(result[0]).toMatchObject({
+      action: 'edit',
+      status: 'saved',
+      file: '📁 /tmp/chatgpt/edit_1.png',
+      page_url: 'https://chatgpt.com/c/edit123',
+    });
+  });
+
   it('retries edit auto-download polling until the edited image becomes downloadable', async () => {
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageOpenTarget').mockResolvedValue({ ok: true, requestedIndex: 1, source: 'images-my-images' });
     vi.spyOn(imageEditInternals, 'waitForChatGPTImageEditModal').mockResolvedValue({
