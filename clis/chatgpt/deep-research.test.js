@@ -159,6 +159,35 @@ describe('chatgpt/deep-research', () => {
     expect(result[0].ui_state).toBe('pending');
   });
 
+  it('returns explicit current-UI detail when research mode selector is absent', async () => {
+    mockSelectResearchMode.mockResolvedValue({ ok: false, reason: 'model-selector-not-found', availableLabels: [] });
+    mockReadSnapshot.mockResolvedValueOnce({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究',
+      uiState: 'landing',
+    }).mockResolvedValueOnce({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究',
+      uiState: 'landing',
+    });
+
+    const result = await deepResearchCommand.func(page, { prompt: 'research this topic', mode: 'Pro research' });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      ui_state: 'landing',
+      conversation_url: 'https://chatgpt.com/deep-research',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '深度研究',
+      detail: 'Research mode selection failed: model-selector-not-found; current UI exposes: 深度研究',
+    }]);
+  });
+
   it('returns the current state with detail when research mode selection fails', async () => {
     mockSelectResearchMode.mockResolvedValue({ ok: false, reason: 'mode-option-not-found', availableLabels: ['Extended', 'Deep Research'] });
     mockReadSnapshot.mockResolvedValueOnce({

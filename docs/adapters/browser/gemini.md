@@ -36,6 +36,12 @@ opencli gemini image "A watercolor sunset over a lake" --sd true
 
 # Save generated images to a custom directory
 opencli gemini image "A flat illustration of a robot" --op ~/tmp/gemini-images
+
+# Start Gemini Deep Research and return the conversation URL once the run is confirmed
+opencli gemini deep-research "Research Google's public description of Gemini Deep Research; return 2 bullets"
+
+# Poll a Gemini Deep Research conversation for an export/result state
+opencli gemini deep-research-result https://gemini.google.com/app/abc123 --timeout 30
 ```
 
 ## Options
@@ -73,6 +79,23 @@ Typical fields include:
 | `--op` | Output directory for downloaded images (default: `~/tmp/gemini-images`) |
 | `--sd` | Skip download and only print the Gemini page link |
 
+### `deep-research`
+
+| Option | Description |
+|--------|-------------|
+| `prompt` | Deep Research prompt to send (required positional argument) |
+| `--timeout` | Max seconds to wait for submit/confirm before returning a conservative failure state (default: `30`) |
+| `--tool` | Optional override for the visible tool label (default labels include `Deep Research`, `Deep research`, and `深度研究`) |
+| `--confirm` | Optional override for the visible confirmation button label (default labels include `Start research` variants and localized equivalents) |
+
+### `deep-research-result`
+
+| Option | Description |
+|--------|-------------|
+| `query` | Conversation title or Gemini conversation URL; empty defaults to the latest conversation |
+| `--match` | Title match mode: `contains` or `exact` (default: `contains`) |
+| `--timeout` | Max seconds to wait for a Docs/export URL or pending/export-not-ready classification (default: `120`) |
+
 ## Behavior
 
 - `ask` uses plain minimal output and returns only the assistant response text prefixed with `💬`.
@@ -83,6 +106,9 @@ Typical fields include:
 - `image` always starts from a fresh Gemini chat before sending the prompt.
 - `image --rt` / `--st` currently augment the prompt text; they do **not** click Gemini-native ratio or style controls.
 - When `--sd` is enabled, `image` keeps the generation in Gemini and only prints the conversation link.
+- `deep-research` starts from a fresh Gemini chat, selects the visible Deep Research tool, sends the prompt, clicks the visible research confirmation, and returns `started` with the Gemini conversation URL when the run is confirmed.
+- `deep-research-result` classifies the visible result/export state. If a report is still running or the Docs export is not ready, it returns a pending/export-not-ready message instead of pretending completion. This response can be polled by an outer notifier for asynchronous Deep Research reminders.
+- If the Gemini UI drifts, first compare `deep-research` tool selection against the raw Browser Bridge page state: a visible button in `browser state` but `tool-not-found` from the adapter indicates selector drift, not login failure.
 
 ## Prerequisites
 

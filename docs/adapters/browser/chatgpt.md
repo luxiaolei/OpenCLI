@@ -26,13 +26,16 @@ opencli chatgpt image "a tiny watercolor fox" --sd true
 # Start a Deep Research thread and return the thread URL + visible state
 opencli chatgpt deep-research "Research the best browser automation tools for consumer apps"
 
-# Start with an explicit visible research/thinking mode, e.g. Pro Research or Extended
+# Start with an explicit visible research/thinking mode only when the UI exposes one
+# If the current /deep-research page only shows the active Deep Research pill,
+# this fails before submission with model-selector-not-found and current UI detail.
 opencli chatgpt deep-research "Research the OpenAI Pro Research UX" --mode "Pro research"
 
-# Inspect the latest/current Deep Research thread state
+# Inspect the latest/current Deep Research landing or thread state
 opencli chatgpt deep-research-status
 
-# Watch a thread for visible state changes and return only transitions
+# Watch a known thread for visible state changes and return only transitions
+# Pass the returned conversation_url for reliable async monitoring/reminders.
 opencli chatgpt deep-research-status https://chatgpt.com/c/abc123 --watch true --interval 30 --timeout 1800
 
 # Inspect the currently visible ChatGPT Images workbench capabilities
@@ -116,8 +119,9 @@ No options yet. The command only inspects what is visibly available on `/images`
 
 - These commands drive the **ChatGPT web UI**, not the macOS desktop app.
 - `image` now uses the same `/images`-first create flow as `image-create`, then polls the resulting thread in short download checks until visible images can be saved or the timeout budget is exhausted. Unless `--sd true` is set, it downloads all visible results.
-- `deep-research` is intentionally conservative: it opens `/deep-research`, optionally selects a visible research/thinking mode such as Pro Research or Extended, injects the prompt, sends it, and returns only a **visible UI classification**.
-- `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI. With `--watch true`, it polls and returns only changed states, which is the OpenCLI-side primitive for dynamic reminders / asynchronous follow-up.
+- `deep-research` is intentionally conservative: it opens `/deep-research`, optionally selects a visible research/thinking mode when ChatGPT exposes a selector, injects the prompt, sends it, and returns only a **visible UI classification**.
+- On the current localized `/deep-research` landing page, ChatGPT may expose only the active `Deep Research` / `深度研究` pill plus Applications/Sites controls and no separate mode selector. In that state `--mode "Pro research"` or `--mode "Extended"` fails before prompt submission with `model-selector-not-found` and the current visible mode label; plain `deep-research <prompt>` can still start the default Deep Research flow.
+- `deep-research-status` re-opens a thread by URL/title/latest fallback and classifies only what is visibly present in the UI. With `--watch true`, it polls and returns only changed states, which is the OpenCLI-side primitive for dynamic reminders / asynchronous follow-up. For reliable monitoring, pass the returned `conversation_url`; an empty query may report the current `/deep-research` landing state.
 - `image-capabilities` opens `/images` and reports only the currently visible workbench capabilities.
 - `image-create` performs a capability-first preflight on `/images`, sends a prompt, and returns a conservative submission/result state.
 - `image-edit` defaults to `/images`, opens the requested visible image entry, waits for the lightbox edit composer to become ready, sends the edit prompt, and then polls the resulting edit thread for downloadable images unless `--sd true` is set. Pre-existing visible source images are excluded from the auto-download pass so the command does not falsely re-save the original input images.

@@ -42,7 +42,10 @@ export const deepResearchCommand = cli({
         const available = Array.isArray(modeResult?.availableLabels) && modeResult.availableLabels.length
           ? `; available: ${modeResult.availableLabels.join(', ')}`
           : '';
-        return [buildChatGPTDeepResearchRow(snapshotAfterModeFailure, { detail: `Research mode selection failed: ${modeResult?.reason || 'mode-selection-failed'}${available}` })];
+        const currentUi = !available && modeResult?.reason === 'model-selector-not-found' && snapshotAfterModeFailure?.modeLabel
+          ? `; current UI exposes: ${snapshotAfterModeFailure.modeLabel}`
+          : '';
+        return [buildChatGPTDeepResearchRow(snapshotAfterModeFailure, { detail: `Research mode selection failed: ${modeResult?.reason || 'mode-selection-failed'}${available}${currentUi}` })];
       }
     }
     const sendResult = await sendChatGPTDeepResearchPrompt(page, prompt);
