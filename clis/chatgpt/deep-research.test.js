@@ -10,6 +10,7 @@ const {
   mockOpenDeepResearch,
   mockParsePositiveInt,
   mockReadSnapshot,
+  mockSelectResearchMode,
   mockSendPrompt,
   mockWaitForState,
 } = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ const {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }),
   mockReadSnapshot: vi.fn(),
+  mockSelectResearchMode: vi.fn(),
   mockSendPrompt: vi.fn(),
   mockWaitForState: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock('./utils.js', () => ({
   openChatGPTDeepResearch: mockOpenDeepResearch,
   parseChatGPTPositiveInt: mockParsePositiveInt,
   readChatGPTDeepResearchSnapshot: mockReadSnapshot,
+  selectChatGPTResearchMode: mockSelectResearchMode,
   sendChatGPTDeepResearchPrompt: mockSendPrompt,
   waitForChatGPTDeepResearchState: mockWaitForState,
 }));
@@ -56,6 +59,7 @@ describe('chatgpt/deep-research', () => {
       uiState: 'landing',
     });
     mockSendPrompt.mockResolvedValue({ ok: true, submitLabel: '发送提示' });
+    mockSelectResearchMode.mockResolvedValue({ ok: true, skipped: true });
     mockWaitForState.mockResolvedValue({
       url: 'https://chatgpt.com/c/abc123',
       conversationId: 'abc123',
@@ -145,6 +149,42 @@ describe('chatgpt/deep-research', () => {
       thread_title: '',
       mode_label: '',
       detail: 'Not signed in to ChatGPT.',
+    }]);
+  });
+
+  it('selects the requested Pro or Extended research mode before submitting the prompt', async () => {
+    const result = await deepResearchCommand.func(page, { prompt: 'research this topic', mode: 'Pro research', timeout: '45' });
+    expect(mockSelectResearchMode).toHaveBeenCalledWith(page, 'Pro research');
+    expect(mockSendPrompt).toHaveBeenCalledWith(page, 'research this topic');
+    expect(result[0].ui_state).toBe('pending');
+  });
+
+  it('returns the current state with detail when research mode selection fails', async () => {
+    mockSelectResearchMode.mockResolvedValue({ ok: false, reason: 'mode-option-not-found', availableLabels: ['Extended', 'Deep Research'] });
+    mockReadSnapshot.mockResolvedValueOnce({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究',
+      uiState: 'landing',
+    }).mockResolvedValueOnce({
+      url: 'https://chatgpt.com/deep-research',
+      conversationId: '',
+      threadTitle: '',
+      modeLabel: '深度研究',
+      uiState: 'landing',
+    });
+
+    const result = await deepResearchCommand.func(page, { prompt: 'research this topic', mode: 'Pro research' });
+
+    expect(mockSendPrompt).not.toHaveBeenCalled();
+    expect(result).toEqual([{
+      ui_state: 'landing',
+      conversation_url: 'https://chatgpt.com/deep-research',
+      conversation_id: '',
+      thread_title: '',
+      mode_label: '深度研究',
+      detail: 'Research mode selection failed: mode-option-not-found; available: Extended, Deep Research',
     }]);
   });
 });

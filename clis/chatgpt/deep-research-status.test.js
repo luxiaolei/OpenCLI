@@ -11,6 +11,7 @@ const {
   mockOpenConversation,
   mockOpenDeepResearch,
   mockParseConversationUrl,
+  mockParsePositiveInt,
   mockParseTitleMatchMode,
   mockReadSnapshot,
   mockResolveConversation,
@@ -30,6 +31,10 @@ const {
     const raw = String(value ?? '').trim();
     return raw.startsWith('https://chatgpt.com/c/') ? raw : null;
   }),
+  mockParsePositiveInt: vi.fn((value, fallback) => {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }),
   mockParseTitleMatchMode: vi.fn((value) => {
     const raw = String(value ?? 'contains').trim().toLowerCase();
     return raw === 'contains' || raw === 'exact' ? raw : null;
@@ -45,6 +50,7 @@ vi.mock('./utils.js', () => ({
   openChatGPTConversation: mockOpenConversation,
   openChatGPTDeepResearch: mockOpenDeepResearch,
   parseChatGPTConversationUrl: mockParseConversationUrl,
+  parseChatGPTPositiveInt: mockParsePositiveInt,
   parseChatGPTTitleMatchMode: mockParseTitleMatchMode,
   readChatGPTDeepResearchSnapshot: mockReadSnapshot,
   resolveChatGPTConversationForQuery: mockResolveConversation,
@@ -176,5 +182,56 @@ describe('chatgpt/deep-research-status', () => {
       thread_title: '',
       mode_label: '深度研究 应用站点',
     }]);
+  });
+
+  it('watches status changes and returns only distinct transitions', async () => {
+    page.wait = vi.fn().mockResolvedValue(undefined);
+    mockReadSnapshot
+      .mockResolvedValueOnce({
+        url: 'https://chatgpt.com/c/abc123',
+        conversationId: 'abc123',
+        threadTitle: 'ChatGPT Deep Research 概述',
+        modeLabel: '深度研究',
+        uiState: 'pending',
+      })
+      .mockResolvedValueOnce({
+        url: 'https://chatgpt.com/c/abc123',
+        conversationId: 'abc123',
+        threadTitle: 'ChatGPT Deep Research 概述',
+        modeLabel: '深度研究',
+        uiState: 'pending',
+      })
+      .mockResolvedValueOnce({
+        url: 'https://chatgpt.com/c/abc123',
+        conversationId: 'abc123',
+        threadTitle: 'ChatGPT Deep Research 概述',
+        modeLabel: '深度研究',
+        uiState: 'retry_required',
+      });
+
+    const result = await deepResearchStatusCommand.func(page, {
+      query: 'https://chatgpt.com/c/abc123',
+      watch: true,
+      interval: '1',
+      timeout: '3',
+    });
+
+    expect(page.wait).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([
+      {
+        ui_state: 'pending',
+        conversation_url: 'https://chatgpt.com/c/abc123',
+        conversation_id: 'abc123',
+        thread_title: 'ChatGPT Deep Research 概述',
+        mode_label: '深度研究',
+      },
+      {
+        ui_state: 'retry_required',
+        conversation_url: 'https://chatgpt.com/c/abc123',
+        conversation_id: 'abc123',
+        thread_title: 'ChatGPT Deep Research 概述',
+        mode_label: '深度研究',
+      },
+    ]);
   });
 });

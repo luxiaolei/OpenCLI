@@ -3272,6 +3272,12 @@
         "help": "Prompt to send into ChatGPT Deep Research"
       },
       {
+        "name": "mode",
+        "type": "str",
+        "required": false,
+        "help": "Optional ChatGPT research/thinking mode to select before submit, e.g. Pro research or Extended"
+      },
+      {
         "name": "timeout",
         "type": "str",
         "default": "30",
@@ -3313,6 +3319,27 @@
         "default": "contains",
         "required": false,
         "help": "Title match mode: contains or exact"
+      },
+      {
+        "name": "watch",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Poll until timeout and return only distinct visible state transitions"
+      },
+      {
+        "name": "interval",
+        "type": "str",
+        "default": "10",
+        "required": false,
+        "help": "Seconds between watch polls (default: 10)"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "120",
+        "required": false,
+        "help": "Max seconds to watch status transitions (default: 120)"
       }
     ],
     "columns": [

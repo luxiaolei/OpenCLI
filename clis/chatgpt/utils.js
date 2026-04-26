@@ -127,6 +127,7 @@ function buildSnapshotScript() {
 
     const currentUrl = window.location.href;
     const currentPath = window.location.pathname || '';
+    const queryVisible = (root, selector) => Array.from(root.querySelectorAll(selector)).find((node) => isVisible(node)) || null;
     const mainRoot = queryVisible(document, 'main') || queryVisible(document, '[role="main"]') || document.body;
     const mainText = clean([
       textOf(mainRoot),
@@ -1467,6 +1468,18 @@ export async function selectChatGPTImageMode(page, requestedMode) {
     availableLabels: [],
   }));
   return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT image mode selection result.' };
+}
+
+export async function selectChatGPTResearchMode(page, requestedMode) {
+  const query = String(requestedMode ?? '').trim();
+  if (!query) return { ok: true, skipped: true };
+  const result = await page.evaluate(buildImageModeSelectionScript(query)).catch((error) => ({
+    ok: false,
+    reason: error instanceof Error ? error.message : String(error),
+    currentLabel: '',
+    availableLabels: [],
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown ChatGPT research mode selection result.' };
 }
 
 function buildImageAspectSelectionScript(requestedAspect) {
