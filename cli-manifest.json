@@ -4321,6 +4321,154 @@
   },
   {
     "site": "codex",
+    "name": "result",
+    "description": "Return the final assistant result or blocker diagnostics for a Codex App job",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "job",
+        "type": "str",
+        "required": true,
+        "valueRequired": true,
+        "help": "Codex job id returned by codex submit"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Optional path to write final result text as an artifact"
+      },
+      {
+        "name": "reread-live",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Re-read the currently open Codex thread and allow it to replace stored final text"
+      }
+    ],
+    "columns": [
+      "job_id",
+      "status",
+      "source",
+      "text",
+      "output",
+      "diagnostic"
+    ],
+    "timeout": 120,
+    "type": "js",
+    "modulePath": "codex/result.js",
+    "sourceFile": "codex/result.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
+    "name": "run",
+    "description": "Submit a Codex App prompt, watch it, and return the result",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Prompt to submit and watch"
+      },
+      {
+        "name": "new",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Start a new Codex thread before sending"
+      },
+      {
+        "name": "current",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Use the current Codex thread (default)"
+      },
+      {
+        "name": "browser",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Prefix prompt with @Browser"
+      },
+      {
+        "name": "computer-use",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Prefix prompt with @Computer Use"
+      },
+      {
+        "name": "approve",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Approval mode: once, always, cancel, or none. Defaults to always with --computer-use, otherwise none",
+        "choices": [
+          "once",
+          "always",
+          "cancel",
+          "none"
+        ]
+      },
+      {
+        "name": "approval-timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Seconds to wait for a delayed approval card when approval automation is used later"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 1800,
+        "required": false,
+        "help": "Watch timeout seconds"
+      },
+      {
+        "name": "poll",
+        "type": "int",
+        "default": 5,
+        "required": false,
+        "help": "Watch poll interval seconds"
+      },
+      {
+        "name": "stable-polls",
+        "type": "int",
+        "default": 3,
+        "required": false,
+        "help": "Number of stable polls required before final"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Optional path to write final result text as an artifact"
+      }
+    ],
+    "columns": [
+      "job_id",
+      "status",
+      "result",
+      "next"
+    ],
+    "timeout": 86400,
+    "type": "js",
+    "modulePath": "codex/run.js",
+    "sourceFile": "codex/run.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
     "name": "send",
     "description": "Send text/commands to the Codex AI composer",
     "domain": "localhost",
@@ -4368,6 +4516,158 @@
     "type": "js",
     "modulePath": "codex/settings.js",
     "sourceFile": "codex/settings.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
+    "name": "submit",
+    "description": "Submit a Codex App prompt and record a local job for watch/result",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "text",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Prompt to submit"
+      },
+      {
+        "name": "new",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Start a new Codex thread before sending"
+      },
+      {
+        "name": "current",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Use the current Codex thread (default)"
+      },
+      {
+        "name": "browser",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Prefix prompt with @Browser"
+      },
+      {
+        "name": "computer-use",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Prefix prompt with @Computer Use"
+      },
+      {
+        "name": "approve",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Approval mode: once, always, cancel, or none. Defaults to always with --computer-use, otherwise none",
+        "choices": [
+          "once",
+          "always",
+          "cancel",
+          "none"
+        ]
+      },
+      {
+        "name": "approval-timeout",
+        "type": "int",
+        "default": 30,
+        "required": false,
+        "help": "Seconds to wait for a delayed approval card when approval automation is used later"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 1800,
+        "required": false,
+        "help": "Default watch timeout seconds stored in the job"
+      },
+      {
+        "name": "poll",
+        "type": "int",
+        "default": 5,
+        "required": false,
+        "help": "Default watch poll interval seconds stored in the job"
+      }
+    ],
+    "columns": [
+      "job_id",
+      "status",
+      "next"
+    ],
+    "timeout": 120,
+    "type": "js",
+    "modulePath": "codex/submit.js",
+    "sourceFile": "codex/submit.js",
+    "navigateBefore": true
+  },
+  {
+    "site": "codex",
+    "name": "watch",
+    "description": "Watch a submitted Codex App job until final, blocked, error, or timeout",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "job",
+        "type": "str",
+        "required": true,
+        "valueRequired": true,
+        "help": "Codex job id returned by codex submit"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "required": false,
+        "help": "Watch timeout seconds (default from job, fallback 1800)"
+      },
+      {
+        "name": "poll",
+        "type": "int",
+        "required": false,
+        "help": "Poll interval seconds (default from job, fallback 5)"
+      },
+      {
+        "name": "stable-polls",
+        "type": "int",
+        "default": 3,
+        "required": false,
+        "help": "Number of stable polls required before final"
+      },
+      {
+        "name": "approve",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Optional approval handling while watching",
+        "choices": [
+          "once",
+          "always",
+          "cancel",
+          "none"
+        ]
+      }
+    ],
+    "columns": [
+      "job_id",
+      "status",
+      "polls",
+      "elapsed_ms",
+      "latest_hash",
+      "summary",
+      "next"
+    ],
+    "timeout": 86400,
+    "type": "js",
+    "modulePath": "codex/watch.js",
+    "sourceFile": "codex/watch.js",
     "navigateBefore": true
   },
   {
