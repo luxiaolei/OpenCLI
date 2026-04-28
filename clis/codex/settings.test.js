@@ -23,11 +23,13 @@ describe('codex settings command', () => {
     expect(source).toContain('计算机使用');
   });
 
-  it('opens settings and the computer use section via native clicks', async () => {
+  it('opens settings and the computer use section via the direct settings path when plugins fallback is unavailable', async () => {
     const page = createPageMock([
+      false,
       false,
       { x: 10, y: 20 },
       { x: 30, y: 40 },
+      false,
       { x: 50, y: 60 },
     ]);
     const rows = await command.func(page, { section: 'computer-use' });
@@ -37,6 +39,20 @@ describe('codex settings command', () => {
     expect(rows[0].Status).toBe('Success');
     expect(rows[0].View).toBe('computer use');
     expect(rows[0].Hint).toContain('Always allow');
+  });
+
+  it('falls back through the plugins page and can already land inside settings before section click is needed', async () => {
+    const page = createPageMock([
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    const rows = await command.func(page, { section: 'computer-use' });
+    expect(page.nativeClick).not.toHaveBeenCalled();
+    expect(rows[0].Status).toBe('Success');
+    expect(rows[0].View).toBe('computer use');
   });
 
   it('returns a focused failure when the settings trigger is missing', async () => {
