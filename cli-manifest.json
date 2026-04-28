@@ -4255,6 +4255,133 @@
   },
   {
     "site": "codex",
+    "name": "automations",
+    "description": "Open or manage Codex App Automations through deeplink and conservative prompt-level workflows",
+    "domain": "localhost",
+    "strategy": "ui",
+    "browser": true,
+    "args": [
+      {
+        "name": "action",
+        "type": "str",
+        "default": "open",
+        "required": false,
+        "positional": true,
+        "help": "Action: open, list, inbox, create, edit, pause, resume, delete, or run"
+      },
+      {
+        "name": "text",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Automation task, target name/id, or query depending on action"
+      },
+      {
+        "name": "schedule",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Schedule in natural language or cron form"
+      },
+      {
+        "name": "project",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Project name or absolute path for project automation scope"
+      },
+      {
+        "name": "thread",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Thread URL/id/name or context note for thread automations"
+      },
+      {
+        "name": "model",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Preferred model for the automation, e.g. gpt-5.4"
+      },
+      {
+        "name": "reasoning",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Preferred reasoning effort, e.g. low, medium, high"
+      },
+      {
+        "name": "notes",
+        "type": "str",
+        "required": false,
+        "valueRequired": true,
+        "help": "Additional management instructions"
+      },
+      {
+        "name": "submit",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Submit the generated automation-management prompt and return a job id"
+      },
+      {
+        "name": "run",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Submit, watch, and return the automation-management result"
+      },
+      {
+        "name": "new",
+        "type": "bool",
+        "default": true,
+        "required": false,
+        "help": "Use a new Codex thread for prompt-level management (default)"
+      },
+      {
+        "name": "current",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "Use the current Codex thread instead of a new one"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 1800,
+        "required": false,
+        "help": "Watch timeout seconds when --run is used"
+      },
+      {
+        "name": "poll",
+        "type": "int",
+        "default": 5,
+        "required": false,
+        "help": "Watch poll interval seconds when --run is used"
+      },
+      {
+        "name": "stable-polls",
+        "type": "int",
+        "default": 3,
+        "required": false,
+        "help": "Stable polls required before final when --run is used"
+      }
+    ],
+    "columns": [
+      "Status",
+      "Action",
+      "View",
+      "Hint"
+    ],
+    "timeout": 86400,
+    "type": "js",
+    "modulePath": "codex/automations.js",
+    "sourceFile": "codex/automations.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "codex",
     "name": "computer-use",
     "description": "Open Codex Computer Use, attach it to the current composer, optionally send a prompt, and optionally click an in-app approval card",
     "domain": "localhost",
