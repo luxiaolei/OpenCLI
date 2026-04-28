@@ -1,7 +1,10 @@
 export const CHATGPT_WEB_DOMAIN = 'chatgpt.com';
+export const CHATGPT_HOME_URL = 'https://chatgpt.com/';
 export const CHATGPT_DEEP_RESEARCH_URL = 'https://chatgpt.com/deep-research';
 export const CHATGPT_DEEP_RESEARCH_MODE_LABELS = ['Deep Research', '深度研究'];
+export const CHATGPT_AGENT_MODE_LABELS = ['Agent mode', 'Agent', '代理模式'];
 const CHATGPT_DEEP_RESEARCH_UI_STATES = new Set(['landing', 'input_ready', 'submitted', 'pending', 'retry_required', 'unknown']);
+const CHATGPT_AGENT_UI_STATES = new Set(['landing', 'input_ready', 'submitted', 'running', 'waiting_for_confirmation', 'waiting_for_login', 'waiting_for_takeover', 'final', 'error', 'unknown']);
 
 const CHATGPT_COMPOSER_SELECTORS = [
   'textarea[placeholder*="获取详细报告"]',
@@ -683,6 +686,228 @@ export async function waitForChatGPTDeepResearchState(page, timeoutSeconds = 30)
   if (pendingSnapshot) {
     return pendingSnapshot;
   }
+  return {
+    ...lastSnapshot,
+    uiState: 'submitted',
+  };
+}
+
+function buildChatGPTAgentSnapshotScript() {
+  const composerSelectorsJson = JSON.stringify(CHATGPT_COMPOSER_SELECTORS);
+  const sendSelectorsJson = JSON.stringify(CHATGPT_SEND_BUTTON_SELECTORS);
+  return `(() => {
+    const clean = (value) => String(value ?? '')
+      .replace(/\\u00a0/g, ' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const textOf = (node) => clean(node instanceof HTMLElement ? (node.innerText || node.textContent || '') : '');
+    const attrOf = (node, name) => clean(node instanceof Element ? (node.getAttribute(name) || '') : '');
+    const combinedLabel = (node) => clean([textOf(node), attrOf(node, 'aria-label')].filter(Boolean).join(' '));
+    const isDisabled = (node) => {
+      if (!(node instanceof HTMLElement)) return true;
+      if ('disabled' in node && node.disabled) return true;
+      return attrOf(node, 'aria-disabled').toLowerCase() === 'true';
+    };
+    const findFirstVisible = (selectors) => {
+      for (const selector of selectors) {
+        const found = Array.from(document.querySelectorAll(selector)).find((node) => isVisible(node));
+        if (found instanceof HTMLElement) return found;
+      }
+      return null;
+    };
+    const findActionNode = (matcher) => Array.from(document.querySelectorAll('button, [role="button"], a, span, div'))
+      .find((node) => isVisible(node) && matcher(combinedLabel(node).toLowerCase())) || null;
+
+    const currentUrl = window.location.href;
+    const currentPath = window.location.pathname || '';
+    const conversationMatch = currentPath.match(/^\\/c\\/([^/?#]+)/);
+    const documentTitle = clean(document.title || '').replace(/\\s*[-|·].*$/, '').trim();
+    const mainRoot = Array.from(document.querySelectorAll('main, [role="main"]')).find((node) => isVisible(node)) || document.body;
+    const mainText = clean([
+      textOf(mainRoot),
+      clean(document.body ? (document.body.innerText || document.body.textContent || '') : ''),
+    ].filter(Boolean).join(' '));
+    const lowerMainText = mainText.toLowerCase();
+    const lowerHtml = String(document.body ? (document.body.innerHTML || '') : '').toLowerCase();
+
+    let composer = findFirstVisible(${composerSelectorsJson});
+    if (!(composer instanceof HTMLElement)) {
+      composer = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]'))
+        .find((node) => isVisible(node)) || null;
+    }
+    const composerText = composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement
+      ? clean(composer.value)
+      : textOf(composer);
+    const composerPlaceholder = attrOf(composer, 'placeholder') || attrOf(composer, 'aria-label');
+    let sendButton = findFirstVisible(${sendSelectorsJson});
+    if (!(sendButton instanceof HTMLElement)) {
+      sendButton = Array.from(document.querySelectorAll('button, [role="button"]'))
+        .find((node) => {
+          if (!isVisible(node)) return false;
+          const label = combinedLabel(node).toLowerCase();
+          return label.includes('send prompt') || label.includes('发送提示');
+        }) || null;
+    }
+
+    const loginNode = Array.from(document.querySelectorAll('a, button')).find((node) => {
+      if (!isVisible(node)) return false;
+      const label = combinedLabel(node).toLowerCase();
+      return label.includes('log in') || label.includes('sign in') || label.includes('登录') || label.includes('免费注册') || label.includes('sign up');
+    }) || null;
+    const agentNode = findActionNode((label) => label.includes('agent mode') || label === 'agent' || label.includes('代理模式'));
+    const confirmationNode = findActionNode((label) => label.includes('confirm') || label.includes('approve') || label.includes('allow') || label.includes('确认') || label.includes('允许'));
+    const takeoverNode = findActionNode((label) => label.includes('take over') || label.includes('secure browser') || label.includes('接管') || label.includes('安全浏览器'));
+    const stopNode = findActionNode((label) => label.includes('stop') || label.includes('停止'));
+    const errorNode = findActionNode((label) => label.includes('try again') || label.includes('retry') || label.includes('重试'));
+    const finalLike = Boolean(conversationMatch)
+      && !stopNode
+      && (lowerMainText.includes('task complete') || lowerMainText.includes('completed') || lowerMainText.includes('完成') || lowerMainText.includes('已完成'));
+    const modeLabel = clean(agentNode ? combinedLabel(agentNode) : ((lowerMainText.includes('agent mode') || lowerHtml.includes('agent mode')) ? 'Agent mode' : ''));
+
+    return {
+      url: currentUrl,
+      pathname: currentPath,
+      conversationId: conversationMatch ? conversationMatch[1] : '',
+      threadTitle: conversationMatch ? documentTitle : '',
+      modeLabel,
+      confirmationLabel: clean(confirmationNode ? combinedLabel(confirmationNode) : ''),
+      takeoverLabel: clean(takeoverNode ? combinedLabel(takeoverNode) : ''),
+      stopLabel: clean(stopNode ? combinedLabel(stopNode) : ''),
+      errorLabel: clean(errorNode ? combinedLabel(errorNode) : ''),
+      sendEnabled: Boolean(sendButton) && !isDisabled(sendButton),
+      sendLabel: clean(sendButton ? combinedLabel(sendButton) : ''),
+      composerHasText: Boolean(composerText),
+      composerText,
+      composerPlaceholder,
+      isChatGPTHomePage: currentPath === '/' || currentPath === '',
+      finalLike,
+      isSignedIn: loginNode ? false : null,
+    };
+  })()`;
+}
+
+function buildSendAgentPromptScript(prompt) {
+  return buildSendPromptScript(`/agent ${String(prompt ?? '').trim()}`)
+    .replaceAll('ChatGPT Deep Research composer', 'ChatGPT Agent composer')
+    .replaceAll('ChatGPT Deep Research send button', 'ChatGPT Agent send button')
+    .replaceAll('ChatGPT Deep Research.', 'ChatGPT Agent.');
+}
+
+export function normalizeChatGPTAgentUiState(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return CHATGPT_AGENT_UI_STATES.has(raw) ? raw : '';
+}
+
+export function normalizeChatGPTAgentModeLabel(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/agent mode/i.test(raw) || /^agent$/i.test(raw)) return 'Agent mode';
+  if (/代理模式/.test(raw)) return '代理模式';
+  return raw;
+}
+
+export function classifyChatGPTAgentSnapshot(snapshot) {
+  if (snapshot?.isSignedIn === false) return 'waiting_for_login';
+  if (snapshot?.errorLabel) return 'error';
+  if (snapshot?.takeoverLabel) return 'waiting_for_takeover';
+  if (snapshot?.confirmationLabel) return 'waiting_for_confirmation';
+  if (snapshot?.finalLike) return 'final';
+  if (snapshot?.conversationId && (snapshot?.modeLabel || snapshot?.stopLabel)) return 'running';
+  if (snapshot?.composerHasText && snapshot?.sendEnabled) return 'input_ready';
+  if (snapshot?.isChatGPTHomePage || snapshot?.modeLabel) return 'landing';
+  return 'unknown';
+}
+
+export function normalizeChatGPTAgentSnapshot(snapshot) {
+  const url = String(snapshot?.url ?? '').trim();
+  const conversationId = String(snapshot?.conversationId ?? '').trim() || extractChatGPTConversationId(url);
+  const explicitUiState = normalizeChatGPTAgentUiState(snapshot?.uiState ?? '');
+  const inferredSignedIn = typeof snapshot?.isSignedIn === 'boolean'
+    ? snapshot.isSignedIn
+    : (isChatGPTAuthUrl(url) ? false : null);
+  const normalized = {
+    url,
+    pathname: String(snapshot?.pathname ?? '').trim(),
+    conversationId,
+    threadTitle: String(snapshot?.threadTitle ?? '').trim(),
+    modeLabel: normalizeChatGPTAgentModeLabel(snapshot?.modeLabel ?? ''),
+    confirmationLabel: String(snapshot?.confirmationLabel ?? '').trim(),
+    takeoverLabel: String(snapshot?.takeoverLabel ?? '').trim(),
+    stopLabel: String(snapshot?.stopLabel ?? '').trim(),
+    errorLabel: String(snapshot?.errorLabel ?? '').trim(),
+    sendEnabled: Boolean(snapshot?.sendEnabled),
+    sendLabel: String(snapshot?.sendLabel ?? '').trim(),
+    composerHasText: Boolean(snapshot?.composerHasText),
+    composerText: String(snapshot?.composerText ?? '').trim(),
+    composerPlaceholder: String(snapshot?.composerPlaceholder ?? '').trim(),
+    isChatGPTHomePage: Boolean(snapshot?.isChatGPTHomePage),
+    finalLike: Boolean(snapshot?.finalLike),
+    isSignedIn: inferredSignedIn,
+  };
+  normalized.uiState = explicitUiState || classifyChatGPTAgentSnapshot(normalized);
+  return normalized;
+}
+
+export function buildChatGPTAgentRow(snapshot, extra = {}) {
+  const normalized = normalizeChatGPTAgentSnapshot(snapshot);
+  const row = {
+    ui_state: normalized.uiState,
+    conversation_url: normalized.url,
+    conversation_id: normalized.conversationId,
+    thread_title: normalized.threadTitle,
+    mode_label: normalized.modeLabel,
+  };
+  const detail = extra.detail || (normalized.isSignedIn === false ? 'Not signed in to ChatGPT.' : '');
+  if (detail) row.detail = String(detail);
+  return row;
+}
+
+export async function openChatGPTAgent(page) {
+  await page.goto(CHATGPT_HOME_URL, { waitUntil: 'load', settleMs: 2500 });
+  await page.wait({ time: 1 });
+}
+
+export async function readChatGPTAgentSnapshot(page) {
+  const snapshot = await page.evaluate(buildChatGPTAgentSnapshotScript()).catch(async () => ({
+    url: await getCurrentChatGPTUrl(page),
+  }));
+  return normalizeChatGPTAgentSnapshot(snapshot && typeof snapshot === 'object' ? snapshot : {});
+}
+
+export async function sendChatGPTAgentPrompt(page, prompt) {
+  const result = await page.evaluate(buildSendAgentPromptScript(prompt)).catch((error) => ({
+    ok: false,
+    reason: 'Failed to execute prompt insertion in ChatGPT Agent.',
+    detail: error instanceof Error ? error.message : String(error),
+  }));
+  return result && typeof result === 'object' ? result : { ok: false, reason: 'Unknown send result.' };
+}
+
+export async function waitForChatGPTAgentState(page, timeoutSeconds = 30) {
+  const timeout = parseChatGPTPositiveInt(timeoutSeconds, 30);
+  let lastSnapshot = await readChatGPTAgentSnapshot(page);
+  let activeSnapshot = ['running', 'waiting_for_confirmation', 'waiting_for_login', 'waiting_for_takeover', 'final', 'error'].includes(lastSnapshot.uiState)
+    ? lastSnapshot
+    : null;
+  if (activeSnapshot && activeSnapshot.uiState !== 'running') return activeSnapshot;
+  for (let attempt = 0; attempt < timeout; attempt += 1) {
+    await page.wait({ time: 1 });
+    lastSnapshot = await readChatGPTAgentSnapshot(page);
+    if (['waiting_for_confirmation', 'waiting_for_login', 'waiting_for_takeover', 'final', 'error'].includes(lastSnapshot.uiState)) {
+      return lastSnapshot;
+    }
+    if (lastSnapshot.uiState === 'running') {
+      activeSnapshot = lastSnapshot;
+    }
+  }
+  if (activeSnapshot) return activeSnapshot;
   return {
     ...lastSnapshot,
     uiState: 'submitted',

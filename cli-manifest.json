@@ -3258,6 +3258,99 @@
   },
   {
     "site": "chatgpt",
+    "name": "agent",
+    "description": "Start a ChatGPT Agent Mode task and return a conservative submitted/running/waiting state",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "prompt",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Task prompt to send into ChatGPT Agent Mode"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "30",
+        "required": false,
+        "help": "Max seconds to wait for an agent state before falling back to submitted (default: 30)"
+      }
+    ],
+    "columns": [
+      "ui_state",
+      "conversation_url",
+      "conversation_id",
+      "thread_title",
+      "mode_label"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/agent.js",
+    "sourceFile": "chatgpt/agent.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
+    "name": "agent-status",
+    "description": "Classify the visible UI state of a ChatGPT Agent Mode task thread",
+    "domain": "chatgpt.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": false,
+        "positional": true,
+        "help": "Conversation URL, title query, or empty for current Agent landing/current state"
+      },
+      {
+        "name": "match",
+        "type": "str",
+        "default": "contains",
+        "required": false,
+        "help": "Title match mode: contains or exact"
+      },
+      {
+        "name": "watch",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Poll until timeout and return only distinct visible state transitions"
+      },
+      {
+        "name": "interval",
+        "type": "str",
+        "default": "10",
+        "required": false,
+        "help": "Seconds between watch polls (default: 10)"
+      },
+      {
+        "name": "timeout",
+        "type": "str",
+        "default": "120",
+        "required": false,
+        "help": "Max seconds to watch status transitions (default: 120)"
+      }
+    ],
+    "columns": [
+      "ui_state",
+      "conversation_url",
+      "conversation_id",
+      "thread_title",
+      "mode_label"
+    ],
+    "timeout": 180,
+    "type": "js",
+    "modulePath": "chatgpt/agent-status.js",
+    "sourceFile": "chatgpt/agent-status.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "chatgpt",
     "name": "deep-research",
     "description": "Start a ChatGPT Deep Research thread and return a conservative submitted/pending/retry state",
     "domain": "chatgpt.com",
