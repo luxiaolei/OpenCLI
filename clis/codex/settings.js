@@ -6,6 +6,29 @@ import { buildCodexComputerUseHint } from './utils.js';
 const SETTINGS_LABELS = ['settings', '设置'];
 const BACK_TO_APP_LABELS = ['back to app', '返回应用'];
 const COMPUTER_USE_SECTION_LABELS = ['computer use', '电脑使用', '计算机使用'];
+const PLUGINS_SECTION_LABELS = ['plugins', '插件'];
+
+function buildLocateNavigationItemScript(labels) {
+  return `
+    (function() {
+      const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      const wanted = ${JSON.stringify(labels)};
+      const node = Array.from(document.querySelectorAll('button,[role="tab"],[role="link"],div[role="link"],a')).find((candidate) => {
+        const text = normalize(candidate.innerText || candidate.textContent || '');
+        const aria = normalize(candidate.getAttribute('aria-label') || '');
+        return wanted.includes(text) || wanted.includes(aria);
+      });
+      if (!(node instanceof HTMLElement)) return null;
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    })()
+  `;
+}
+
+const locatePluginsSectionScript = buildLocateNavigationItemScript(PLUGINS_SECTION_LABELS);
 
 const hasSettingsShellScript = `
   (function() {
@@ -74,6 +97,27 @@ function buildLocateSettingsSectionScript(section) {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
       };
+    })()
+  `;
+}
+
+function buildClickSettingsSectionScript(section) {
+  const target = String(section || '').replace(/-/g, ' ').trim().toLowerCase();
+  const aliases = target === 'computer use'
+    ? COMPUTER_USE_SECTION_LABELS
+    : [target];
+  return `
+    (function() {
+      const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      const labels = ${JSON.stringify(aliases)};
+      const node = Array.from(document.querySelectorAll('button,[role="tab"],[role="link"],div[role="link"],a')).find((candidate) => {
+        const text = normalize(candidate.innerText || candidate.textContent || '');
+        const aria = normalize(candidate.getAttribute('aria-label') || '');
+        return labels.includes(text) || labels.includes(aria);
+      });
+      if (!(node instanceof HTMLElement)) return false;
+      node.click();
+      return true;
     })()
   `;
 }
@@ -217,6 +261,68 @@ async function rawClick(config, coords) {
   return true;
 }
 
+async function openSettingsFromPluginsPage(page) {
+  const openedPlugins = await page.evaluate(`
+    (function() {
+      const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+      const node = Array.from(document.querySelectorAll('button,[role="tab"],[role="link"],div[role="link"],a')).find((candidate) => {
+        const text = normalize(candidate.innerText || candidate.textContent || '');
+        const aria = normalize(candidate.getAttribute('aria-label') || '');
+        return ${JSON.stringify(PLUGINS_SECTION_LABELS)}.includes(text.toLowerCase()) || ${JSON.stringify(PLUGINS_SECTION_LABELS)}.includes(aria.toLowerCase());
+      });
+      if (!(node instanceof HTMLElement)) return false;
+      node.click();
+      return true;
+    })()
+  `);
+  if (!openedPlugins) return false;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.wait({ time: 0.5 });
+    const alreadyInSettings = await page.evaluate(hasSettingsShellScript);
+    if (alreadyInSettings) return true;
+
+    const openedMenu = await page.evaluate(`
+      (function() {
+        const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const labels = ${JSON.stringify(SETTINGS_LABELS)};
+        const trigger = Array.from(document.querySelectorAll('button')).find((node) => {
+          const text = normalize(node.innerText || node.textContent || '');
+          const aria = normalize(node.getAttribute('aria-label') || '');
+          return (labels.includes(text) || labels.includes(aria))
+            && normalize(node.getAttribute('aria-haspopup') || '') === 'menu';
+        });
+        if (!(trigger instanceof HTMLElement)) return false;
+        trigger.click();
+        return true;
+      })()
+    `);
+    if (!openedMenu) continue;
+    await page.wait({ time: 0.5 });
+
+    const openedSettings = await page.evaluate(`
+      (function() {
+        const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const labels = ${JSON.stringify(SETTINGS_LABELS)};
+        const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find((node) => {
+          const text = normalize(node.innerText || node.textContent || '');
+          const aria = normalize(node.getAttribute('aria-label') || '');
+          return labels.includes(text) || labels.includes(aria);
+        });
+        if (!(item instanceof HTMLElement)) return false;
+        item.click();
+        return true;
+      })()
+    `);
+    if (openedSettings) {
+      await page.wait({ time: 1 });
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function openSettingsViaRawCdp(section) {
   const config = resolveRawCdpConfig();
   if (!config) return null;
@@ -231,7 +337,22 @@ async function openSettingsViaRawCdp(section) {
 
     const menuItemCoords = await rawEvaluate(config, locateSettingsMenuItemScript);
     if (!menuItemCoords || !(await rawClick(config, menuItemCoords))) {
-      return buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+      const pluginCoords = await rawEvaluate(config, locatePluginsSectionScript);
+      if (!pluginCoords || !(await rawClick(config, pluginCoords))) {
+        return buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+      }
+      await sleep(200);
+
+      const fallbackTriggerCoords = await rawEvaluate(config, locateSettingsTriggerScript);
+      if (!fallbackTriggerCoords || !(await rawClick(config, fallbackTriggerCoords))) {
+        return buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+      }
+      await sleep(200);
+
+      const fallbackMenuItemCoords = await rawEvaluate(config, locateSettingsMenuItemScript);
+      if (!fallbackMenuItemCoords || !(await rawClick(config, fallbackMenuItemCoords))) {
+        return buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+      }
     }
     await sleep(250);
   }
@@ -276,29 +397,33 @@ export const settingsCommand = cli({
     const alreadyInSettings = await page.evaluate(hasSettingsShellScript);
 
     if (!alreadyInSettings) {
-      const triggerCoords = await page.evaluate(locateSettingsTriggerScript);
-      const openedMenu = await clickCoords(page, triggerCoords);
-      if (!openedMenu) {
-        return (await openSettingsViaRawCdp(section))
-          || buildResult('Failed', 'App', 'Could not find the sidebar Settings trigger.');
-      }
-      await page.wait({ time: 1 });
+      const openedFromPlugins = await openSettingsFromPluginsPage(page);
+      if (!openedFromPlugins) {
+        const triggerCoords = await page.evaluate(locateSettingsTriggerScript);
+        const openedMenu = await clickCoords(page, triggerCoords);
+        if (!openedMenu) {
+          return (await openSettingsViaRawCdp(section))
+            || buildResult('Failed', 'App', 'Could not find the sidebar Settings trigger.');
+        }
+        await page.wait({ time: 1 });
 
-      const menuItemCoords = await page.evaluate(locateSettingsMenuItemScript);
-      const openedSettings = await clickCoords(page, menuItemCoords);
-      if (!openedSettings) {
-        return (await openSettingsViaRawCdp(section))
-          || buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+        const menuItemCoords = await page.evaluate(locateSettingsMenuItemScript);
+        const openedSettings = await clickCoords(page, menuItemCoords);
+        if (!openedSettings) {
+          return (await openSettingsViaRawCdp(section))
+            || buildResult('Failed', 'App', 'Could not find the Settings menu item after opening the account menu.');
+        }
+        await page.wait({ time: 1 });
       }
-      await page.wait({ time: 1 });
     }
 
     if (!section) {
       return buildResult('Success', 'Settings', '');
     }
 
-    const sectionCoords = await page.evaluate(buildLocateSettingsSectionScript(section));
-    const openedSection = await clickCoords(page, sectionCoords);
+    const sectionClicked = await page.evaluate(buildClickSettingsSectionScript(section));
+    const sectionCoords = sectionClicked ? null : await page.evaluate(buildLocateSettingsSectionScript(section));
+    const openedSection = sectionClicked || await clickCoords(page, sectionCoords);
     await page.wait({ time: 1 });
     if (!openedSection) {
       return (await openSettingsViaRawCdp(section))

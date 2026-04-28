@@ -4,14 +4,15 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import { buildCodexComputerUseHint, classifyCodexComputerUseGate } from './utils.js';
 import { settingsCommand } from './settings.js';
 
-const TRY_IN_CHAT_LABELS = ['try in chat', '在聊天中试用'];
+const TRY_IN_CHAT_LABELS = ['try in chat', '在聊天中试用', '在聊天中试试'];
 const COMPUTER_USE_COMPOSER_LABELS = ['computer use', '计算机使用', '电脑使用'];
+const COMPUTER_USE_MENTION = '@Computer use';
 
 const locateTryInChatScript = `
   (function() {
     const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
     const labels = ${JSON.stringify(TRY_IN_CHAT_LABELS)};
-    const btn = Array.from(document.querySelectorAll('button')).find((node) => {
+    const btn = Array.from(document.querySelectorAll('button,[role="button"],a,div[role="button"]')).find((node) => {
       const label = normalize(node.getAttribute('aria-label') || '');
       const text = normalize(node.innerText || node.textContent || '');
       return labels.includes(label) || labels.includes(text);
@@ -25,10 +26,34 @@ const locateTryInChatScript = `
   })()
 `;
 
+const fireTryInChatScript = `
+  (function() {
+    const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const labels = ${JSON.stringify(TRY_IN_CHAT_LABELS)};
+    const target = Array.from(document.querySelectorAll('button,[role="button"],a,div[role="button"]')).find((node) => {
+      const text = normalize(node.innerText || node.textContent || '');
+      const aria = normalize(node.getAttribute('aria-label') || '');
+      return labels.includes(text) || labels.includes(aria);
+    });
+    if (!(target instanceof HTMLElement)) return false;
+    const init = { bubbles: true, cancelable: true, composed: true, view: window };
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      target.dispatchEvent(new MouseEvent(type, init));
+    }
+    return true;
+  })()
+`;
+
 const hasComputerUseComposerScript = `
   (function() {
     const text = String(document.body.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-    return ${JSON.stringify(COMPUTER_USE_COMPOSER_LABELS)}.some((label) => text.includes(label));
+    const hasComputerUse = ${JSON.stringify(COMPUTER_USE_COMPOSER_LABELS)}.some((label) => text.includes(label));
+    const hasComposerInput = Boolean(document.querySelector('[data-codex-composer="true"][contenteditable="true"], textarea, [contenteditable="true"]'));
+    const hasSubmitButton = Array.from(document.querySelectorAll('button,[role="button"]')).some((node) => {
+      const label = String(node.innerText || node.textContent || node.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      return ['submit', '提交'].includes(label);
+    });
+    return hasComputerUse && hasComposerInput && hasSubmitButton;
   })()
 `;
 
@@ -213,6 +238,12 @@ async function waitForTryInChatCoordsRaw(config, attempts = 4) {
 }
 
 async function tryOpenComputerUseFromSettings(page) {
+  const openedFromDom = await page.evaluate(fireTryInChatScript);
+  if (openedFromDom) {
+    await page.wait({ time: 1 });
+    return true;
+  }
+
   const tryInChatCoords = await waitForTryInChatCoords(page);
   const openedChat = await clickCoords(page, tryInChatCoords);
   if (openedChat) return true;
@@ -231,11 +262,10 @@ async function checkComputerUseComposerReady(page) {
   return Boolean(await rawEvaluate(config, hasComputerUseComposerScript));
 }
 
-async function sendComputerUsePrompt(page, text) {
+async function setComposerText(page, text) {
   const injected = await page.evaluate(buildInjectComposerPromptScript(text));
   if (injected) {
     await page.wait({ time: 1 });
-    await page.pressKey('Enter');
     return true;
   }
 
@@ -248,6 +278,35 @@ async function sendComputerUsePrompt(page, text) {
     });
     if (!focused?.result?.result?.value) return false;
     await send('Input.insertText', { text });
+    return true;
+  });
+}
+
+function buildComputerUseInvocationText(text = '') {
+  const trimmed = String(text || '').trim();
+  return trimmed ? `${COMPUTER_USE_MENTION} ${trimmed}` : COMPUTER_USE_MENTION;
+}
+
+async function ensureComputerUseInvocationVisible(page) {
+  return setComposerText(page, buildComputerUseInvocationText());
+}
+
+async function sendComputerUsePrompt(page, text) {
+  const injected = await setComposerText(page, buildComputerUseInvocationText(text));
+  if (injected) {
+    await page.pressKey('Enter');
+    return true;
+  }
+
+  const config = resolveRawCdpConfig();
+  if (!config) return false;
+  return withRawCdp(config, async (send) => {
+    const focused = await send('Runtime.evaluate', {
+      expression: buildInjectComposerPromptScript(''),
+      returnByValue: true,
+    });
+    if (!focused?.result?.result?.value) return false;
+    await send('Input.insertText', { text: buildComputerUseInvocationText(text) });
     await send('Input.dispatchKeyEvent', {
       type: 'keyDown',
       windowsVirtualKeyCode: 13,
@@ -468,22 +527,108 @@ export const computerUseCommand = cli({
       }];
     }
 
-    const [settingsRow] = await settingsCommand.func(page, { section: 'computer-use' });
-    if (!settingsRow || settingsRow.Status !== 'Success') {
+    const continueFromReadyComposer = async () => {
+      if (!promptText) {
+        const invocationVisible = await ensureComputerUseInvocationVisible(page);
+        if (!invocationVisible) {
+          return [{
+            Status: 'Partial',
+            State: 'Composer ready',
+            Approval: approvalMode || '',
+            Hint: 'Computer Use chat opened, but `@Computer use` could not be inserted into the composer yet.',
+          }];
+        }
+        return [{
+          Status: 'Success',
+          State: 'Composer ready',
+          Approval: approvalMode || '',
+          Hint: 'Computer Use is attached to the composer. `@Computer use` is visible in the chat box. Next run `opencli codex send "..."` or `opencli codex ask "..."`, or pass a prompt directly via `opencli codex computer-use "..."`. Use `--approve once` or `--approve always` if you also want OpenCLI to click a future in-app approval card.',
+        }];
+      }
+
+      const promptSent = await sendComputerUsePrompt(page, promptText);
+      if (!promptSent) {
+        return [{
+          Status: 'Partial',
+          State: 'Composer ready',
+          Prompt: 'Not sent',
+          Hint: buildCodexComputerUseHint('Computer Use is attached, but the prompt could not be injected into the composer.'),
+        }];
+      }
+      await page.wait({ time: 1 });
+
+      const gateAttempts = approvalMode ? approvalTimeout : 4;
+      const { gate } = await waitForComputerUseGate(page, gateAttempts);
+      if (gate?.kind === 'approval' && approvalMode) {
+        const clicked = await clickApprovalButton(page, approvalMode);
+        if (!clicked) {
+          return [{
+            Status: 'Partial',
+            State: gate.state,
+            Prompt: promptText ? 'Sent' : 'Skipped',
+            Approval: approvalMode,
+            Hint: `Codex is waiting for approval, but the ${describeApprovalMode(approvalMode)} button could not be found yet.`,
+          }];
+        }
+
+        await page.wait({ time: 1 });
+        const cleared = await waitForApprovalCardToClear(page);
+        return [{
+          Status: cleared ? 'Success' : 'Partial',
+          State: 'Approval clicked',
+          Prompt: promptText ? 'Sent' : 'Skipped',
+          Approval: approvalMode,
+          Hint: cleared
+            ? `Clicked ${describeApprovalMode(approvalMode)} on the in-app approval card. Continue monitoring the Codex thread for the next step.`
+            : `Clicked ${describeApprovalMode(approvalMode)} on the in-app approval card, but the approval UI still looks present. Keep monitoring the Codex thread.`,
+        }];
+      }
+
+      if (gate) {
+        return [{
+          Status: gate.status,
+          State: gate.state,
+          Prompt: promptText ? 'Sent' : 'Skipped',
+          Approval: approvalMode || '',
+          Hint: approvalMode && gate.kind === 'permissions'
+            ? `${gate.hint} In-app approval automation cannot bypass macOS TCC.`
+            : gate.hint,
+        }];
+      }
+
       return [{
-        Status: 'Blocked',
-        State: settingsRow?.View || 'App',
-        Hint: settingsRow?.Hint || buildCodexComputerUseHint('Could not reach the Codex Computer Use settings.'),
+        Status: 'Success',
+        State: 'Prompt sent',
+        Prompt: 'Sent',
+        Approval: approvalMode || '',
+        Hint: 'Computer Use is attached and the prompt was submitted. Use `opencli codex read`, `opencli codex ask`, or the Codex app thread to monitor progress. When Codex asks to use an app, choose `Always allow` if you want persistent approval, or rerun with `--approve once|always` to automate that in-app card.',
       }];
+    };
+
+    const readyNow = await checkComputerUseComposerReady(page);
+    if (readyNow) {
+      return continueFromReadyComposer();
     }
 
-    const openedChat = await tryOpenComputerUseFromSettings(page);
+    let openedChat = await tryOpenComputerUseFromSettings(page);
     if (!openedChat) {
-      return [{
-        Status: 'Blocked',
-        State: 'Computer use',
-        Hint: buildCodexComputerUseHint('Codex opened Computer use, but Try in Chat was not available. If the plugin is not installed, click Install first.'),
-      }];
+      const [settingsRow] = await settingsCommand.func(page, { section: 'computer-use' });
+      if (!settingsRow || settingsRow.Status !== 'Success') {
+        return [{
+          Status: 'Blocked',
+          State: settingsRow?.View || 'App',
+          Hint: settingsRow?.Hint || buildCodexComputerUseHint('Could not reach the Codex Computer Use settings.'),
+        }];
+      }
+
+      openedChat = await tryOpenComputerUseFromSettings(page);
+      if (!openedChat) {
+        return [{
+          Status: 'Blocked',
+          State: 'Computer use',
+          Hint: buildCodexComputerUseHint('Codex opened Computer use, but Try in Chat was not available. If the plugin is not installed, click Install first.'),
+        }];
+      }
     }
 
     await page.wait({ time: 1 });
@@ -496,73 +641,6 @@ export const computerUseCommand = cli({
       }];
     }
 
-    if (promptText) {
-      const promptSent = await sendComputerUsePrompt(page, promptText);
-      if (!promptSent) {
-        return [{
-          Status: 'Partial',
-          State: 'Composer ready',
-          Prompt: 'Not sent',
-          Hint: buildCodexComputerUseHint('Computer Use is attached, but the prompt could not be injected into the composer.'),
-        }];
-      }
-      await page.wait({ time: 1 });
-    }
-
-    const gateAttempts = approvalMode ? approvalTimeout : (promptText ? 4 : 2);
-    const { gate } = await waitForComputerUseGate(page, gateAttempts);
-    if (gate?.kind === 'approval' && approvalMode) {
-      const clicked = await clickApprovalButton(page, approvalMode);
-      if (!clicked) {
-        return [{
-          Status: 'Partial',
-          State: gate.state,
-          Prompt: promptText ? 'Sent' : 'Skipped',
-          Approval: approvalMode,
-          Hint: `Codex is waiting for approval, but the ${describeApprovalMode(approvalMode)} button could not be found yet.`,
-        }];
-      }
-
-      await page.wait({ time: 1 });
-      const cleared = await waitForApprovalCardToClear(page);
-      return [{
-        Status: cleared ? 'Success' : 'Partial',
-        State: 'Approval clicked',
-        Prompt: promptText ? 'Sent' : 'Skipped',
-        Approval: approvalMode,
-        Hint: cleared
-          ? `Clicked ${describeApprovalMode(approvalMode)} on the in-app approval card. Continue monitoring the Codex thread for the next step.`
-          : `Clicked ${describeApprovalMode(approvalMode)} on the in-app approval card, but the approval UI still looks present. Keep monitoring the Codex thread.`,
-      }];
-    }
-
-    if (gate) {
-      return [{
-        Status: gate.status,
-        State: gate.state,
-        Prompt: promptText ? 'Sent' : 'Skipped',
-        Approval: approvalMode || '',
-        Hint: approvalMode && gate.kind === 'permissions'
-          ? `${gate.hint} In-app approval automation cannot bypass macOS TCC.`
-          : gate.hint,
-      }];
-    }
-
-    if (!promptText) {
-      return [{
-        Status: 'Success',
-        State: 'Composer ready',
-        Approval: approvalMode || '',
-        Hint: 'Computer Use is attached to the composer. Next run `opencli codex send "..."` or `opencli codex ask "..."`, or pass a prompt directly via `opencli codex computer-use "..."`. Use `--approve once` or `--approve always` if you also want OpenCLI to click a future in-app approval card.',
-      }];
-    }
-
-    return [{
-      Status: 'Success',
-      State: 'Prompt sent',
-      Prompt: 'Sent',
-      Approval: approvalMode || '',
-      Hint: 'Computer Use is attached and the prompt was submitted. Use `opencli codex read`, `opencli codex ask`, or the Codex app thread to monitor progress. When Codex asks to use an app, choose `Always allow` if you want persistent approval, or rerun with `--approve once|always` to automate that in-app card.',
-    }];
+    return continueFromReadyComposer();
   },
 });

@@ -28,20 +28,20 @@ describe('codex computer-use command', () => {
     expect(source).toContain('在聊天中试用');
   });
 
-  it('opens Computer Use settings, clicks Try in Chat, and returns next-step guidance', async () => {
+  it('fires a full pointer event sequence for Try in Chat because plain click is flaky in the current Codex UI', () => {
+    expect(source).toContain('pointerdown');
+    expect(source).toContain('mouseup');
+  });
+
+  it('makes @Computer use visible in the composer before declaring success', async () => {
     const page = createPageMock([
-      false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
-      { x: 70, y: 80 },
+      true,
+      true,
       true,
     ]);
     const rows = await command.func(page, {});
-    expect(page.nativeClick).toHaveBeenNthCalledWith(1, 10, 20);
-    expect(page.nativeClick).toHaveBeenNthCalledWith(2, 30, 40);
-    expect(page.nativeClick).toHaveBeenNthCalledWith(3, 50, 60);
-    expect(page.nativeClick).toHaveBeenNthCalledWith(4, 70, 80);
+    expect(page.nativeClick).not.toHaveBeenCalled();
+    expect(page.evaluate.mock.calls.some(([script]) => String(script).includes('@Computer use'))).toBe(true);
     expect(rows).toEqual([
       {
         Status: 'Success',
@@ -52,18 +52,36 @@ describe('codex computer-use command', () => {
     ]);
   });
 
-  it('returns a focused hint when Try in Chat is unavailable', async () => {
+  it('reuses an already-open Computer Use composer instead of forcing the settings path again', async () => {
     const page = createPageMock([
       true,
-      { x: 11, y: 21 },
+      true,
+    ]);
+    const rows = await command.func(page, {});
+    expect(page.evaluate.mock.calls.some(([script]) => String(script).includes('@Computer use'))).toBe(true);
+    expect(rows).toEqual([
+      {
+        Status: 'Success',
+        State: 'Composer ready',
+        Approval: '',
+        Hint: expect.stringContaining('@Computer use'),
+      },
+    ]);
+  });
+
+  it('surfaces the settings-path blocker when Computer Use cannot even be reached', async () => {
+    const page = createPageMock([
+      false,
       null,
+      false,
+      false,
     ]);
     const rows = await command.func(page, {});
     expect(rows).toEqual([
       {
         Status: 'Blocked',
-        State: 'Computer use',
-        Hint: expect.stringContaining('If the plugin is not installed, click Install'),
+        State: 'App',
+        Hint: expect.stringContaining('Settings trigger'),
       },
     ]);
   });
@@ -71,37 +89,32 @@ describe('codex computer-use command', () => {
   it('retries Try in Chat lookup when the Computer Use pane renders slowly', async () => {
     const page = createPageMock([
       false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
       null,
       { x: 70, y: 80 },
       true,
+      true,
     ]);
     const rows = await command.func(page, {});
-    expect(page.nativeClick).toHaveBeenNthCalledWith(4, 70, 80);
+    expect(page.nativeClick).toHaveBeenNthCalledWith(1, 70, 80);
     expect(rows).toEqual([
       {
         Status: 'Success',
         State: 'Composer ready',
         Approval: '',
-        Hint: expect.stringContaining('opencli codex computer-use'),
+        Hint: expect.stringContaining('@Computer use'),
       },
     ]);
   });
 
-  it('can send a prompt immediately after attaching Computer Use and distinguishes approval blockers', async () => {
+  it('prepends @Computer use when sending a prompt after attaching the tool', async () => {
     const page = createPageMock([
-      false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
-      { x: 70, y: 80 },
+      true,
       true,
       true,
       'Allow Codex to use Safari? Always allow Allow Cancel',
     ]);
     const rows = await command.func(page, { text: 'Open Safari and stop at the approval prompt.' });
+    expect(page.evaluate.mock.calls.some(([script]) => String(script).includes('@Computer use Open Safari and stop at the approval prompt.'))).toBe(true);
     expect(page.pressKey).toHaveBeenCalledWith('Enter');
     expect(rows).toEqual([
       {
@@ -116,19 +129,18 @@ describe('codex computer-use command', () => {
 
   it('can auto-click Always allow when explicitly requested', async () => {
     const page = createPageMock([
-      false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
-      { x: 70, y: 80 },
+      true,
+      true,
+      true,
       true,
       true,
       'Allow Codex to use Safari? Always allow Allow Cancel',
+      null,
       { x: 90, y: 100 },
       'Working for 3s',
     ]);
     const rows = await command.func(page, { text: 'Open Safari and stop at the approval prompt.', approve: 'always' });
-    expect(page.nativeClick).toHaveBeenNthCalledWith(5, 90, 100);
+    expect(page.nativeClick).toHaveBeenNthCalledWith(1, 90, 100);
     expect(rows).toEqual([
       {
         Status: 'Success',
@@ -142,20 +154,18 @@ describe('codex computer-use command', () => {
 
   it('waits longer for a delayed approval card when automation is requested', async () => {
     const page = createPageMock([
-      false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
-      { x: 70, y: 80 },
+      true,
+      true,
       true,
       true,
       ...Array.from({ length: 10 }, (_, index) => `Working for ${index + 1}s`),
       'Allow Codex to use Safari? Always allow Allow Cancel',
+      null,
       { x: 92, y: 102 },
       'Working for 11s',
     ]);
     const rows = await command.func(page, { text: 'Open Safari and stop at the approval prompt.', approve: 'once' });
-    expect(page.nativeClick).toHaveBeenNthCalledWith(5, 92, 102);
+    expect(page.nativeClick).toHaveBeenNthCalledWith(1, 92, 102);
     expect(rows).toEqual([
       {
         Status: 'Success',
@@ -169,19 +179,18 @@ describe('codex computer-use command', () => {
 
   it('maps one-off approval mode to Yes for command execution cards', async () => {
     const page = createPageMock([
-      false,
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
-      { x: 70, y: 80 },
+      true,
+      true,
+      true,
       true,
       true,
       'Run this command? Yes, and don\'t ask again No Yes',
+      null,
       { x: 91, y: 101 },
       'Working for 2s',
     ]);
     const rows = await command.func(page, { text: 'Open Terminal and run pwd.', approve: 'once' });
-    expect(page.nativeClick).toHaveBeenNthCalledWith(5, 91, 101);
+    expect(page.nativeClick).toHaveBeenNthCalledWith(1, 91, 101);
     expect(rows).toEqual([
       {
         Status: 'Success',
