@@ -338,6 +338,8 @@ describe('executeCommand', () => {
   it('does not use the Electron launcher for browser web commands on an electron-named site', async () => {
     const launcher = await import('./launcher.js');
     const runtime = await import('./runtime.js');
+    const previousAutoChrome = process.env.OPENCLI_AUTO_CHROME_CDP;
+    delete process.env.OPENCLI_AUTO_CHROME_CDP;
     const spy = vi.spyOn(launcher, 'resolveElectronEndpoint')
       .mockResolvedValue('http://127.0.0.1:9236');
     const chromeSpy = vi.spyOn(launcher, 'resolveChromeEndpoint')
@@ -359,12 +361,17 @@ describe('executeCommand', () => {
       func: async () => [{ ok: true }],
     });
 
-    await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
-    expect(spy).not.toHaveBeenCalled();
-    expect(chromeSpy).toHaveBeenCalled();
-    expect(browserSessionSpy).toHaveBeenCalled();
-    browserSessionSpy.mockRestore();
-    chromeSpy.mockRestore();
-    spy.mockRestore();
+    try {
+      await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
+      expect(spy).not.toHaveBeenCalled();
+      expect(chromeSpy).not.toHaveBeenCalled();
+      expect(browserSessionSpy).toHaveBeenCalled();
+    } finally {
+      if (previousAutoChrome === undefined) delete process.env.OPENCLI_AUTO_CHROME_CDP;
+      else process.env.OPENCLI_AUTO_CHROME_CDP = previousAutoChrome;
+      browserSessionSpy.mockRestore();
+      chromeSpy.mockRestore();
+      spy.mockRestore();
+    }
   }, 15000);
 });
