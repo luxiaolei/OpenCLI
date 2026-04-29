@@ -25,6 +25,34 @@ That's it! The daemon auto-starts when you run any browser command. No tokens, n
 opencli doctor            # Check extension + daemon connectivity
 ```
 
+## Browser Harness backend (experimental)
+
+OpenCLI can also use [Browser Harness](https://github.com/browser-use/browser-harness) as an extensionless Chrome DevTools backend. This is useful when you want to talk to Browser Use's daemon/socket layer directly instead of the OpenCLI Chrome extension.
+
+```bash
+# one-time Browser Harness setup (enables/validates Chrome remote debugging)
+browser-harness --setup
+
+# run any OpenCLI browser command through Browser Harness
+OPENCLI_BROWSER_BACKEND=browser-harness opencli browser state
+OPENCLI_BROWSER_BACKEND=browser-harness opencli browser eval 'document.title'
+```
+
+Configuration:
+
+| Variable | Purpose |
+| --- | --- |
+| `OPENCLI_BROWSER_BACKEND=browser-harness` | Selects the Browser Harness backend. `harness` is also accepted. |
+| `OPENCLI_BROWSER_HARNESS=1` | Alternate feature flag for the same backend. |
+| `OPENCLI_BROWSER_HARNESS_NAME` / `BU_NAME` | Browser Harness daemon name. Defaults to `default`; socket is `/tmp/bu-<name>.sock` on POSIX. |
+| `OPENCLI_BROWSER_HARNESS_SOCKET` | Explicit Unix socket path override. |
+| `BH_TMP_DIR` | Browser Harness isolated temp directory; socket becomes `<BH_TMP_DIR>/bu.sock`. |
+| `BU_CDP_WS` / `BU_CDP_URL` | Browser Harness CDP target overrides for remote or dedicated browsers. |
+| `OPENCLI_BROWSER_HARNESS_AUTO_START=0` | Disable OpenCLI's best-effort `browser-harness -c pass` daemon auto-start. |
+| `OPENCLI_BROWSER_HARNESS_COMMAND` | Custom Browser Harness command if `browser-harness` is not on `PATH`. |
+
+When selected, Browser Harness auto-starts if possible, then OpenCLI speaks CDP over its local JSONL socket. `browser tab list`, `--tab`, `browser open`, `browser eval`, screenshots, cookies, console messages, native click/type/key, and network capture use the same OpenCLI command surface where the underlying CDP command is supported by Browser Harness.
+
 ## Tab Targeting
 
 Browser commands run inside the shared `browser:default` workspace unless you explicitly choose another tab target.

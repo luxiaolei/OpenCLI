@@ -10,6 +10,8 @@ const {
   mockBrowserClose,
   mockCDPConnect,
   mockCDPClose,
+  mockHarnessConnect,
+  mockHarnessClose,
   browserState,
   mockMaybeBindWorkspaceToCurrentTab,
 } = vi.hoisted(() => ({
@@ -17,6 +19,8 @@ const {
   mockBrowserClose: vi.fn(),
   mockCDPConnect: vi.fn(),
   mockCDPClose: vi.fn(),
+  mockHarnessConnect: vi.fn(),
+  mockHarnessClose: vi.fn(),
   browserState: { page: null as IPage | null },
   mockMaybeBindWorkspaceToCurrentTab: vi.fn(),
 }));
@@ -28,6 +32,7 @@ vi.mock('./browser/workspace-reuse.js', () => ({
 vi.mock('./browser/index.js', () => {
   mockBrowserConnect.mockImplementation(async () => browserState.page as IPage);
   mockCDPConnect.mockImplementation(async () => browserState.page as IPage);
+  mockHarnessConnect.mockImplementation(async () => browserState.page as IPage);
   return {
     BrowserBridge: class {
       connect = mockBrowserConnect;
@@ -36,6 +41,10 @@ vi.mock('./browser/index.js', () => {
     CDPBridge: class {
       connect = mockCDPConnect;
       close = mockCDPClose;
+    },
+    BrowserHarnessBridge: class {
+      connect = mockHarnessConnect;
+      close = mockHarnessClose;
     },
   };
 });
@@ -129,11 +138,15 @@ describe('browser tab targeting commands', () => {
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockCDPConnect.mockClear();
+    mockHarnessConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
     mockCDPClose.mockReset().mockResolvedValue(undefined);
+    mockHarnessClose.mockReset().mockResolvedValue(undefined);
     mockMaybeBindWorkspaceToCurrentTab.mockReset().mockResolvedValue(false);
     delete process.env.OPENCLI_CDP_ENDPOINT;
     delete process.env.OPENCLI_AUTO_CHROME_CDP;
+    delete process.env.OPENCLI_BROWSER_BACKEND;
+    delete process.env.OPENCLI_BROWSER_HARNESS;
 
     browserState.page = {
       goto: vi.fn().mockResolvedValue(undefined),
@@ -196,6 +209,45 @@ describe('browser tab targeting commands', () => {
     expect(mockCDPConnect).not.toHaveBeenCalled();
     expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('browser:default', {});
     expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  it('routes browser commands through Browser Harness when requested', async () => {
+    process.env.OPENCLI_BROWSER_BACKEND = 'browser-harness';
+    const program = createProgram('', '');
+
+    await program.parseAsync(['node', 'opencli', 'browser', 'eval', 'document.title']);
+
+    expect(mockHarnessConnect).toHaveBeenCalledWith(expect.objectContaining({
+      timeout: 30,
+      workspace: 'browser:default',
+    }));
+    expect(mockBrowserConnect).not.toHaveBeenCalled();
+    expect(mockCDPConnect).not.toHaveBeenCalled();
+    expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+  });
+
+  it('lets Browser Harness override OPENCLI_CDP_ENDPOINT for browser commands', async () => {
+    process.env.OPENCLI_BROWSER_BACKEND = 'browser-harness';
+    process.env.OPENCLI_CDP_ENDPOINT = 'http://127.0.0.1:9333';
+    const program = createProgram('', '');
+
+    try {
+      await program.parseAsync(['node', 'opencli', 'browser', 'eval', '--tab', 'tab-2', 'document.title']);
+
+      expect(mockHarnessConnect).toHaveBeenCalledWith(expect.objectContaining({
+        timeout: 30,
+        workspace: 'browser:default',
+      }));
+      expect(mockHarnessConnect.mock.calls[0][0].cdpEndpoint).toBeUndefined();
+      expect(mockBrowserConnect).not.toHaveBeenCalled();
+      expect(mockCDPConnect).not.toHaveBeenCalled();
+      expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+      expect(browserState.page?.setActivePage).toHaveBeenCalledWith('tab-2');
+      expect(browserState.page?.evaluate).toHaveBeenCalledWith('document.title');
+    } finally {
+      delete process.env.OPENCLI_CDP_ENDPOINT;
+    }
   });
 
   function lastJsonLog(): any {
