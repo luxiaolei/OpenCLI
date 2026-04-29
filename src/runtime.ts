@@ -1,4 +1,4 @@
-import { BrowserBridge, CDPBridge } from './browser/index.js';
+import { BrowserBridge, BrowserHarnessBridge, CDPBridge } from './browser/index.js';
 import type { IPage } from './types.js';
 import { TimeoutError } from './errors.js';
 import { isElectronApp } from './electron-apps.js';
@@ -10,9 +10,21 @@ import { log } from './logger.js';
  * otherwise falls back to site-based Electron detection or BrowserBridge.
  */
 export function getBrowserFactory(site?: string): new () => IBrowserFactory {
+  if (shouldUseBrowserHarness()) return BrowserHarnessBridge;
   if (process.env.OPENCLI_CDP_ENDPOINT) return CDPBridge;
   if (site && isElectronApp(site)) return CDPBridge;
   return BrowserBridge;
+}
+
+export function shouldUseBrowserHarness(): boolean {
+  const backend = process.env.OPENCLI_BROWSER_BACKEND?.trim().toLowerCase();
+  const flag = process.env.OPENCLI_BROWSER_HARNESS?.trim().toLowerCase();
+  return backend === 'browser-harness'
+    || backend === 'harness'
+    || flag === '1'
+    || flag === 'true'
+    || flag === 'yes'
+    || flag === 'on';
 }
 
 function parseEnvTimeout(envVar: string, fallback: number): number {

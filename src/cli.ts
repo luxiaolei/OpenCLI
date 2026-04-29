@@ -306,10 +306,14 @@ async function resolveStoredBrowserTarget(page: import('./types.js').IPage, scop
 /** Create a browser page for browser commands. Uses a dedicated browser workspace for session persistence. */
 async function getBrowserPage(targetPage?: string): Promise<import('./types.js').IPage> {
   const { BrowserBridge, CDPBridge } = await import('./browser/index.js');
+  const { getBrowserFactory, shouldUseBrowserHarness } = await import('./runtime.js');
   const envTimeout = process.env.OPENCLI_BROWSER_TIMEOUT;
   const idleTimeout = envTimeout ? parseInt(envTimeout, 10) : undefined;
-  const cdpEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
-  const bridge = cdpEndpoint ? new CDPBridge() : new BrowserBridge();
+  const useBrowserHarness = shouldUseBrowserHarness();
+  const cdpEndpoint = useBrowserHarness ? undefined : process.env.OPENCLI_CDP_ENDPOINT;
+  const BrowserFactory = cdpEndpoint ? CDPBridge : getBrowserFactory();
+  const bridge = new BrowserFactory();
+  const usesBrowserBridge = !useBrowserHarness && !cdpEndpoint && BrowserFactory === BrowserBridge;
   const page = await bridge.connect({
     timeout: 30,
     workspace: DEFAULT_BROWSER_WORKSPACE,
@@ -324,7 +328,7 @@ async function getBrowserPage(targetPage?: string): Promise<import('./types.js')
     }
   } else if (targetPage) {
     resolvedTargetPage = await resolveBrowserTargetInSession(page, targetPage, { scope: DEFAULT_BROWSER_WORKSPACE, source: 'explicit' });
-  } else {
+  } else if (usesBrowserBridge) {
     if (!storedDefaultTarget) {
       await maybeBindWorkspaceToCurrentTab(DEFAULT_BROWSER_WORKSPACE, {});
     }
@@ -332,6 +336,8 @@ async function getBrowserPage(targetPage?: string): Promise<import('./types.js')
     if (!resolvedTargetPage && storedDefaultTarget) {
       await maybeBindWorkspaceToCurrentTab(DEFAULT_BROWSER_WORKSPACE, {});
     }
+  } else {
+    resolvedTargetPage = await resolveStoredBrowserTarget(page, DEFAULT_BROWSER_WORKSPACE);
   }
   if (resolvedTargetPage) {
     if (!page.setActivePage) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BrowserBridge, CDPBridge, generateStealthJs } from './browser/index.js';
+import { BrowserBridge, BrowserHarnessBridge, CDPBridge, generateStealthJs } from './browser/index.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './browser/tabs.js';
 import { withTimeoutMs, getBrowserFactory } from './runtime.js';
 import { __test__ as cdpTest } from './browser/cdp.js';
@@ -122,6 +122,22 @@ describe('browser helpers', () => {
     vi.unstubAllEnvs();
 
     expect(getBrowserFactory('chatgpt')).toBe(BrowserBridge);
+  });
+
+  it('uses Browser Harness backend when explicitly requested', () => {
+    vi.stubEnv('OPENCLI_BROWSER_BACKEND', 'browser-harness');
+
+    expect(getBrowserFactory('chatgpt')).toBe(BrowserHarnessBridge);
+
+    vi.unstubAllEnvs();
+  });
+
+  it('also enables Browser Harness backend via OPENCLI_BROWSER_HARNESS flag', () => {
+    vi.stubEnv('OPENCLI_BROWSER_HARNESS', '1');
+
+    expect(getBrowserFactory()).toBe(BrowserHarnessBridge);
+
+    vi.unstubAllEnvs();
   });
 });
 

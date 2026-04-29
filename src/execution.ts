@@ -19,7 +19,7 @@ import { executePipeline } from './pipeline/index.js';
 import { AdapterLoadError, ArgumentError, CommandExecutionError, getErrorMessage } from './errors.js';
 import { isDiagnosticEnabled, collectDiagnostic, emitDiagnostic } from './diagnostic.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
-import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT } from './runtime.js';
+import { getBrowserFactory, browserSession, runWithTimeout, DEFAULT_BROWSER_COMMAND_TIMEOUT, shouldUseBrowserHarness } from './runtime.js';
 import { CDPBridge } from './browser/index.js';
 import { maybeBindWorkspaceToCurrentTab } from './browser/workspace-reuse.js';
 import { emitHook, type HookContext } from './hooks.js';
@@ -185,7 +185,8 @@ export async function executeCommand(
   try {
     if (shouldUseBrowserSession(cmd)) {
       ensureRequiredEnv(cmd);
-      const electron = isElectronApp(cmd.site) && (!cmd.domain || cmd.domain === 'localhost' || cmd.domain === '127.0.0.1');
+      const useBrowserHarness = shouldUseBrowserHarness();
+      const electron = !useBrowserHarness && isElectronApp(cmd.site) && (!cmd.domain || cmd.domain === 'localhost' || cmd.domain === '127.0.0.1');
       let cdpEndpoint: string | undefined;
 
       if (electron) {
@@ -203,17 +204,19 @@ export async function executeCommand(
         } else {
           cdpEndpoint = await resolveElectronEndpoint(cmd.site);
         }
-      } else if (process.env.OPENCLI_CDP_ENDPOINT) {
+      } else if (!useBrowserHarness && process.env.OPENCLI_CDP_ENDPOINT) {
         cdpEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
-      } else if (isEnabledEnv(process.env.OPENCLI_AUTO_CHROME_CDP)) {
+      } else if (!useBrowserHarness && isEnabledEnv(process.env.OPENCLI_AUTO_CHROME_CDP)) {
         cdpEndpoint = await resolveChromeEndpoint();
       }
 
-      const BrowserFactory = electron ? getBrowserFactory(cmd.site) : (cdpEndpoint ? CDPBridge : getBrowserFactory());
+      const BrowserFactory = useBrowserHarness
+        ? getBrowserFactory()
+        : (electron ? getBrowserFactory(cmd.site) : (cdpEndpoint ? CDPBridge : getBrowserFactory()));
       const workspace = `site:${cmd.site}`;
       const preNavUrl = resolvePreNav(cmd);
       result = await browserSession(BrowserFactory, async (page) => {
-        if (!electron && !cdpEndpoint && BrowserFactory !== CDPBridge) {
+        if (!electron && !cdpEndpoint && !useBrowserHarness && BrowserFactory !== CDPBridge) {
           await maybeBindWorkspaceToCurrentTab(workspace, cmd.domain ? { matchDomain: cmd.domain } : {});
         }
         if (preNavUrl) {

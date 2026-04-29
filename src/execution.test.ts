@@ -22,6 +22,7 @@ import { cli, Strategy } from './registry.js';
 import { withTimeoutMs } from './runtime.js';
 import * as runtime from './runtime.js';
 import * as capRouting from './capabilityRouting.js';
+import { BrowserBridge, BrowserHarnessBridge } from './browser/index.js';
 
 describe('executeCommand — non-browser timeout', () => {
   beforeEach(() => {
@@ -212,6 +213,37 @@ describe('executeCommand — non-browser timeout', () => {
     mockMaybeBindWorkspaceToCurrentTab.mockReset();
   });
 
+  it('keeps registered Electron-app sites on BrowserBridge when the command domain is non-local', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const goto = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow, goto } as any;
+
+    mockMaybeBindWorkspaceToCurrentTab.mockResolvedValue(true);
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+    const cmd = cli({
+      site: 'doubao-app',
+      name: 'browser-bridge-non-local-electron-site',
+      description: 'test BrowserBridge default for non-local domains on registered Electron sites',
+      browser: true,
+      strategy: Strategy.COOKIE,
+      domain: 'doubao-app',
+      func: async () => [{ ok: true }],
+    });
+
+    await executeCommand(cmd, {});
+
+    expect(browserSessionSpy.mock.calls[0][0]).toBe(BrowserBridge);
+    expect(browserSessionSpy.mock.calls[0][2]).toMatchObject({
+      workspace: 'site:doubao-app',
+    });
+    expect(browserSessionSpy.mock.calls[0][2]?.cdpEndpoint).toBeUndefined();
+    expect(mockMaybeBindWorkspaceToCurrentTab).toHaveBeenCalledWith('site:doubao-app', { matchDomain: 'doubao-app' });
+    vi.restoreAllMocks();
+    mockMaybeBindWorkspaceToCurrentTab.mockReset();
+  });
+
   it('uses a dedicated Chrome CDP profile for normal web adapters only when explicitly enabled', async () => {
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const goto = vi.fn().mockResolvedValue(undefined);
@@ -245,6 +277,50 @@ describe('executeCommand — non-browser timeout', () => {
     } finally {
       if (previous === undefined) delete process.env.OPENCLI_AUTO_CHROME_CDP;
       else process.env.OPENCLI_AUTO_CHROME_CDP = previous;
+      vi.restoreAllMocks();
+      mockResolveChromeEndpoint.mockReset();
+      mockMaybeBindWorkspaceToCurrentTab.mockReset();
+    }
+  });
+
+  it('routes browser-backed adapters through Browser Harness without BrowserBridge bind or auto-CDP when requested', async () => {
+    const closeWindow = vi.fn().mockResolvedValue(undefined);
+    const goto = vi.fn().mockResolvedValue(undefined);
+    const mockPage = { closeWindow, goto } as any;
+    const previousBackend = process.env.OPENCLI_BROWSER_BACKEND;
+    const previousAutoCdp = process.env.OPENCLI_AUTO_CHROME_CDP;
+
+    process.env.OPENCLI_BROWSER_BACKEND = 'browser-harness';
+    process.env.OPENCLI_AUTO_CHROME_CDP = '1';
+    mockResolveChromeEndpoint.mockResolvedValue('http://127.0.0.1:9333');
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn) => fn(mockPage));
+
+    const cmd = cli({
+      site: 'chatgpt',
+      name: 'browser-harness-adapter',
+      description: 'test Browser Harness routing for web adapters',
+      browser: true,
+      strategy: Strategy.COOKIE,
+      domain: 'chatgpt.com',
+      func: async () => [{ ok: true }],
+    });
+
+    try {
+      await executeCommand(cmd, {});
+
+      expect(mockResolveChromeEndpoint).not.toHaveBeenCalled();
+      expect(browserSessionSpy.mock.calls[0][0]).toBe(BrowserHarnessBridge);
+      expect(browserSessionSpy.mock.calls[0][2]).toMatchObject({
+        workspace: 'site:chatgpt',
+      });
+      expect(browserSessionSpy.mock.calls[0][2]?.cdpEndpoint).toBeUndefined();
+      expect(mockMaybeBindWorkspaceToCurrentTab).not.toHaveBeenCalled();
+    } finally {
+      if (previousBackend === undefined) delete process.env.OPENCLI_BROWSER_BACKEND;
+      else process.env.OPENCLI_BROWSER_BACKEND = previousBackend;
+      if (previousAutoCdp === undefined) delete process.env.OPENCLI_AUTO_CHROME_CDP;
+      else process.env.OPENCLI_AUTO_CHROME_CDP = previousAutoCdp;
       vi.restoreAllMocks();
       mockResolveChromeEndpoint.mockReset();
       mockMaybeBindWorkspaceToCurrentTab.mockReset();
